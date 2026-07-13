@@ -1,0 +1,1 @@
+"""MiniLP backend application package."""
