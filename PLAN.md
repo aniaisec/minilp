@@ -1,66 +1,134 @@
 # MiniLP — Mini Labeling Platform
 
-A self-hostable, open-source platform for collecting pairwise (side-by-side) preference judgments for RLHF and LLM evaluation, with built-in quality controls: **position-bias counterbalancing**, gold questions, inter-annotator agreement, and rater reputation.
+A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — with built-in quality controls: gold questions, inter-annotator agreement, rater reputation, and (for comparison-style templates) position-bias counterbalancing.
+
+Side-by-side preference judging is the flagship *built-in template*, not the product. The product is the template engine.
 
 **Target location:** `C:\my\agents\Projects\MiniLP`
-**Stack:** FastAPI (Python 3.12) · PostgreSQL · React + TypeScript (Vite) · Docker Compose
+**Stack:** FastAPI (Python ≥3.12) · PostgreSQL · React + TypeScript (Vite) · Docker Compose
 **Timeline:** ~6 milestones, each sized for 1–2 focused sessions with Claude Code
 
 ---
 
 ## 1. Core design principles
 
-1. **Counterbalanced presentation is a scheduling problem, not a UI trick.** Randomizing order per render is not enough — it doesn't guarantee balance. MiniLP pre-generates *judgment slots* with fixed presentation orders and enforces balance at assignment time.
-2. **Store canonical data, present blinded data.** The database always knows which response is A and which is B (and which model produced each). The annotator only ever sees "Left" and "Right."
-3. **Every judgment records both the canonical choice and the raw side clicked.** This is what makes position-bias measurable after the fact.
-4. **Quality is a pipeline, not a report.** Gold questions, agreement, and position-bias scores feed a live rater reputation score that gates task assignment.
+1. **Templates define everything the annotator sees and returns.** A template = display blocks (what to show) + input fields (what to collect) + optional variant rules (how presentation is balanced). Adding a new labeling type means writing a template, not writing code.
+2. **Store canonical data, present blinded data.** The database knows the ground truth about each unit (source models, expected answers, variant assignment). The annotator sees only what the template renders.
+3. **Record raw and canonical answers.** For variant-balanced templates (e.g. side-by-side), every label stores both the raw input (side clicked) and the canonical value (item chosen) — this is what makes presentation bias measurable.
+4. **Quality is a pipeline, not a report.** Gold questions, agreement, and bias scores feed a live rater reputation score that gates task assignment — uniformly across all template types.
+5. **Guidelines are first-class.** Every project carries annotator instructions (markdown), always available in the annotation view as a collapsible panel — expanded on the annotator's first task, collapsed after, one keystroke to toggle.
 
 ---
 
-## 2. Side-by-side counterbalancing spec (your requirement, formalized)
+## 2. Template system (the core)
 
-### 2.1 Rules
+### 2.1 Template schema
 
-- Each comparison pair `(A, B)` is configured with `judgments_per_pair = K`, where **K must be even** (enforced at project creation; default `K = 4`).
-- The system pre-generates `K` **judgment slots** per pair:
-  - `K/2` slots with `presentation_order = AB` (A shown on the left)
-  - `K/2` slots with `presentation_order = BA` (B shown on the left)
-- **Across-annotator counterbalancing:** a given annotator is never assigned the same pair twice, in either order. (Showing the same annotator both orders leaks — they remember the content — so balance is achieved across the annotator pool, which is the standard design.)
-- Slot assignment order is shuffled so an annotator's session isn't a predictable AB/BA rhythm.
-- **Balance survives failures:** if a slot is abandoned, expired (lease timeout), or its judgment is voided (e.g., annotator later disqualified), the slot returns to the pool *retaining its order designation*. A pair is only `complete` when all K slots are filled by valid judgments — guaranteeing exactly K/2 valid judgments per order at completion.
-- Gold questions (§5.1) follow the same counterbalancing rules, so bias metrics on golds are comparable to bias metrics on real tasks.
+A template is a versioned JSON document:
 
-### 2.2 What gets stored per judgment
+```jsonc
+{
+  "name": "image-classification",
+  "version": 1,
+  "display": [                    // ordered blocks shown to the annotator
+    { "type": "image", "source": "$unit.image_url" },
+    { "type": "text",  "source": "$unit.context", "optional": true }
+  ],
+  "inputs": [                     // fields the annotator fills
+    {
+      "id": "category",
+      "type": "radio",
+      "label": "What is shown in the image?",
+      "options": ["cat", "dog", "bird"],
+      "allow_other": true         // renders an "Other…" option with free-text entry
+    }
+  ],
+  "variants": null                // or a balancing spec, see §2.3
+}
+```
+
+**Display block types (v1):** `text`, `markdown`, `image`, `audio`, `html_snippet` (sandboxed), `panel_group` (N side-by-side panels, contents drawn from unit payload per the active variant).
+
+**Input field types (v1):** `radio` (with `allow_other`), `checkbox` (multi-select, with `allow_other`), `likert` (labeled scale), `free_text`, `choice_buttons` (large keyboard-mapped buttons, e.g. Left/Tie/Right), `span_select` (highlight spans in a text block — stretch goal, may slip to post-M6).
+
+`$unit.<key>` resolves against the unit's JSON payload at render time. Template + payload validation happens at upload: every unit is checked against the template's required sources before it enters the pool.
+
+### 2.2 Extensibility contract
+
+Adding a new input or display type touches exactly three places, documented in `docs/extending.md`:
+1. JSON-schema fragment for the type's config (backend validation),
+2. a React component registered in the frontend widget registry,
+3. an optional canonicalizer (raw answer → canonical value) on the backend.
+
+Everything else — assignment, leasing, golds, agreement, reputation, export — is template-agnostic because it operates on JSON payloads and JSON answers.
+
+### 2.3 Variants and counterbalancing (generalized from side-by-side)
+
+Some templates present the same unit in multiple equivalent arrangements. A template may declare a **variant dimension**:
+
+```jsonc
+"variants": {
+  "dimension": "panel_order",
+  "values": ["AB", "BA"],
+  "balance": "strict"   // slots pre-generated K/2 per value, K even (enforced)
+}
+```
+
+Rules (unchanged from the original side-by-side spec, now applied to any variant-bearing template):
+- `labels_per_unit = K` must be divisible by the number of variant values (default K=4 for 2 variants); slots are pre-generated with fixed variant values.
+- **Across-annotator balancing:** an annotator never gets the same unit twice in any variant (repeats leak content memory).
+- Slot assignment order is shuffled so sessions have no predictable variant rhythm.
+- **Balance survives failures:** abandoned/expired/voided slots return to the pool *retaining their variant designation*. A unit is `complete` only when all K slots hold valid labels — guaranteeing exact balance at completion.
+- Golds follow the same variant rules, so bias metrics on golds are comparable to real tasks.
+
+Templates without variants (plain classification, rating) simply set `variants: null` and get one slot pool.
+
+### 2.4 What gets stored per label
 
 | Field | Meaning |
 |---|---|
-| `slot_id` | FK to the pre-generated slot (carries `presentation_order`) |
-| `selected_side` | `left` / `right` / `tie` — the raw click |
-| `selected_item` | `A` / `B` / `tie` — derived canonically from side + order |
+| `slot_id` | FK to the pre-generated slot (carries the variant value, if any) |
+| `raw` | JSON: exactly what the annotator entered, per input id (e.g. `{"choice": "left"}`) |
+| `value` | JSON: canonicalized answer (e.g. `{"choice": "A"}`); equals `raw` for variant-free templates |
 | `latency_ms` | Time from render to submit (fast-click detection) |
 | `annotator_id`, `submitted_at` | Attribution |
 
-### 2.3 Analytics this unlocks (Milestone 5)
+---
 
-- **Global left-preference rate:** `P(selected_side = left)` — should be ≈ 0.5 if content, not position, drives choices. Report with a binomial confidence interval.
-- **Per-annotator position-bias score:** each rater's left-rate with CI; feeds reputation.
-- **Per-pair order sensitivity:** does the winner flip between AB and BA presentations of the same pair? Flag high-flip pairs as *position-sensitive* (often genuinely close-quality pairs) and optionally route them for extra judgments or expert review.
-- **Bias-adjusted win rates:** report model win rates both raw and stratified by presentation order.
+## 3. Built-in example templates (the gallery)
+
+Shipped as seed data; each is a full working example an admin can clone and edit. The gallery is also the test corpus for the template engine.
+
+| Template | Shows | Collects | Variants |
+|---|---|---|---|
+| **Side-by-side preference** (flagship) | prompt + two blinded response panels | `choice_buttons`: Left / Tie / Right (keys `←` `↓` `→`) | `panel_order: AB/BA`, strict balance |
+| **Image classification** | an image | `radio` with preset labels + **Other** (manual label entry) | — |
+| **Text sentiment** | a text passage | `radio`: positive / neutral / negative + confidence `likert` 1–5 | — |
+| **Summary quality rating** | source document + model summary | three `likert` scales: faithfulness, coverage, fluency + optional `free_text` comment | — |
+| **Toxicity / policy review** | a text or html snippet | `checkbox` multi-select of violation categories + Other + severity `radio` | — |
+| **Transcription check** | audio clip + candidate transcript | `radio`: correct / minor errors / wrong + `free_text` correction | — |
+| **A/B/n ranking** (stretch) | prompt + N panels | rank inputs | `panel_order` permutations, balanced |
+
+The user-described example maps directly to **Image classification**: show an image; collect a label from a radio group with preset labels, plus "Other" as an escape hatch for a manual label.
 
 ---
 
-## 3. Data model (PostgreSQL)
+## 4. Data model (PostgreSQL)
 
 ```
-projects        (id, name, description, judgments_per_pair, gold_ratio,
-                 lease_minutes, min_reputation, created_at)
-items           (id, project_id, source_model, prompt_text, response_text, meta jsonb)
-pairs           (id, project_id, item_a_id, item_b_id, is_gold, gold_expected,  -- 'A'|'B'
+templates       (id, name, version, description, kind: builtin|custom,
+                 schema jsonb, created_at)     -- immutable per version; edits bump version
+projects        (id, name, description, template_id,
+                 guidelines_md,                 -- annotator instructions (markdown)
+                 labels_per_unit, gold_ratio, lease_minutes, min_reputation,
+                 config jsonb, created_at)
+units           (id, project_id, payload jsonb,        -- resolved by template $unit.* refs
+                 is_gold, gold_expected jsonb,          -- canonical expected answer(s)
                  status: pending|in_progress|complete)
-judgment_slots  (id, pair_id, presentation_order: 'AB'|'BA',
+slots           (id, unit_id, variant jsonb,            -- e.g. {"panel_order": "BA"} or null
                  status: open|leased|filled|voided,
                  leased_by, lease_expires_at)
-judgments       (id, slot_id, annotator_id, selected_side, selected_item,
+labels          (id, slot_id, annotator_id, raw jsonb, value jsonb,
                  latency_ms, comment, submitted_at, is_valid)
 annotators      (id, display_name, email, reputation_score, status, created_at)
 reputation_events (id, annotator_id, kind: gold_pass|gold_fail|agreement|bias_flag|speed_flag,
@@ -68,113 +136,32 @@ reputation_events (id, annotator_id, kind: gold_pass|gold_fail|agreement|bias_fl
 ```
 
 Key constraints:
-- `CHECK` that `judgments_per_pair % 2 = 0` at the project level.
-- Unique partial index preventing two valid judgments by the same annotator on the same *pair* (not just slot).
-- Slot leasing uses `SELECT ... FOR UPDATE SKIP LOCKED` so concurrent annotators never collide — this is the fun distributed-systems bit and worth a section in the README.
+- `CHECK` that `labels_per_unit % n_variant_values = 0` (validated at project creation against the template).
+- Unique partial index preventing two valid labels by the same annotator on the same *unit* (not just slot).
+- Slot leasing uses `SELECT ... FOR UPDATE SKIP LOCKED` so concurrent annotators never collide — the fun distributed-systems bit, worth a README section.
+- Unit payloads validated against the template schema at ingest; rejects listed row-by-row.
 
 ---
 
-## 4. API surface (FastAPI)
+## 5. API surface (FastAPI)
 
 ```
-POST   /projects                          create project (validates even K)
-POST   /projects/{id}/items:bulk          bulk-load responses (JSONL upload)
-POST   /projects/{id}/pairs:generate      pair generation strategies: all-vs-all,
-                                          round-robin by model, or explicit pairs
-GET    /tasks/next?annotator=...          assignment engine: lease next slot
-                                          (reputation gate → gold injection →
-                                           balanced slot pick → lease)
-POST   /tasks/{slot_id}/submit            submit judgment (validates lease, records
-                                          side + canonical choice)
-POST   /tasks/{slot_id}/skip              release lease, slot returns to pool
-GET    /projects/{id}/progress            completion, per-order fill counts
-GET    /projects/{id}/analytics/bias      §2.3 metrics
-GET    /projects/{id}/analytics/agreement Cohen's/Fleiss' kappa, per-pair entropy
-GET    /projects/{id}/export?format=...   JSONL export (§6)
-GET    /annotators/{id}/report            reputation history, gold accuracy, bias score
-```
-
-Auth: simple API-key + annotator token for v1 (document the upgrade path to OAuth; don't build it).
-
----
-
-## 5. Quality-control subsystem
-
-### 5.1 Gold questions
-- Golds are pairs with a known correct answer, injected at `gold_ratio` (default 10%) — indistinguishable from real tasks in the UI, and counterbalanced like everything else.
-- Rolling gold accuracy per annotator; below-threshold accuracy pauses assignment and voids recent judgments (slots reopen, balance preserved).
-
-### 5.2 Reputation score
-Composite score in [0, 1], recomputed on each `reputation_event`:
-- Gold accuracy (dominant weight)
-- Agreement with peers on completed pairs
-- Position-bias penalty (left-rate CI excludes 0.5 by a margin)
-- Speed flags (latency below a per-project floor)
-
-Projects set `min_reputation`; the assignment engine filters on it.
-
-### 5.3 Agreement metrics
-- Cohen's kappa for K=2 designs, Fleiss' kappa for K>2.
-- Per-pair vote entropy to surface genuinely ambiguous pairs vs. noisy raters.
-
----
-
-## 6. Export formats
-
-- **Preference JSONL** (RLHF-ready): `{prompt, chosen, rejected, meta:{votes_a, votes_b, ties, order_flip_rate, mean_annotator_reputation}}`
-- **Raw judgments JSONL**: one row per judgment with full side/order provenance — the format researchers want for bias studies.
-- Optional: Hugging Face `datasets`-compatible loading script.
-
----
-
-## 7. Frontend (React + TS)
-
-- **Annotation view:** prompt at top, two blinded response panels, `Left / Tie / Right` buttons + keyboard shortcuts (`←`, `↓`, `→`), progress bar, skip. No model names, no A/B labels, ever.
-- **Admin dashboard:** project setup, JSONL upload, progress by presentation order (two bars per pair batch — a nice visual proof of the counterbalancing feature), bias and agreement charts, annotator table with reputation.
-- Deliberately plain, fast, keyboard-first — annotation UIs live or die on throughput.
-
----
-
-## 8. Milestones
-
-**M0 — Scaffold (½ session):** monorepo layout (`backend/`, `frontend/`, `docker-compose.yml`), Ruff + pytest + GitHub Actions CI, pre-commit hooks, README skeleton with architecture diagram.
-
-**M1 — Data model + core API:** SQLAlchemy models + Alembic migrations, project/item/pair endpoints, pair generation strategies, slot pre-generation with even-K validation. *Tests: slot counts are exactly K/2 per order for every pair.*
-
-**M2 — Assignment engine:** leasing with `SKIP LOCKED`, lease expiry sweeper, annotator-pair exclusion, gold injection, skip/void → slot reopening. *Tests: concurrency test with N simulated annotators proving no double-assignment and preserved order balance under abandonment; this test is a README highlight.*
-
-**M3 — Annotation UI:** the annotation view wired to `next`/`submit`, keyboard flow, session stats.
-
-**M4 — Quality subsystem:** golds, reputation engine, agreement metrics, assignment gating.
-
-**M5 — Bias analytics + admin dashboard:** §2.3 metrics with CIs, charts, per-pair flip inspection.
-
-**M6 — Export, docs, demo:** JSONL exports, `DESIGN.md` (decision log — counterbalancing rationale, leasing design, reputation weighting), seeded demo mode (`docker compose up` loads a sample project with synthetic annotators), short screen-capture GIF in the README.
-
----
-
-## 9. Repo layout
-
-```
-MiniLP/
-├── backend/
-│   ├── app/            # FastAPI app: api/, models/, services/ (assignment, quality, analytics)
-│   ├── alembic/
-│   └── tests/
-├── frontend/
-│   └── src/            # views: Annotate, Admin, Reports
-├── docs/
-│   ├── DESIGN.md       # decision log — the "Principal engineer" artifact
-│   └── architecture.md
-├── docker-compose.yml
-├── PLAN.md             # this file
-└── README.md
-```
-
-## 10. Definition of done (portfolio bar)
-
-- `docker compose up` → working demo in under 2 minutes
-- CI green: unit + the concurrency/balance test suite
-- README: problem statement, architecture diagram, GIF, bias-analytics screenshot
-- `DESIGN.md` explaining *why* — especially the counterbalancing and leasing designs
-- Companion blog/LinkedIn post draft
+GET    /templates                          list gallery (builtin + custom)
+POST   /templates                          create custom template (JSON, validated)
+POST   /templates/{id}/preview             render-check a sample unit payload
+POST   /projects                           create project (template_id or clone-from-template;
+                                           validates K vs. variants, guidelines_md)
+POST   /projects/{id}/units:bulk           bulk-load units (JSONL), payloads validated
+POST   /projects/{id}/pairs:generate       side-by-side helper: build units from items
+                                           (all-vs-all, round-robin by model, explicit)
+GET    /tasks/next?annotator=...           assignment engine: reputation gate → gold
+                                           injection → variant-balanced slot pick → lease;
+                                           returns template + unit payload + guidelines
+POST   /tasks/{slot_id}/submit             submit label (validates lease + inputs against
+                                           template, canonicalizes raw → value)
+POST   /tasks/{slot_id}/skip               release lease, slot returns to pool
+GET    /projects/{id}/progress             completion; per-variant fill counts
+GET    /projects/{id}/analytics/agreement  Cohen's/Fleiss' kappa, per-unit entropy
+GET    /projects/{id}/analytics/bias       variant-bias metrics (§7) — variant templates only
+GET    /projects/{id}/export?format=...    JSONL export (§8)
+GET    /annotators/{id}/report             reputation history, gold accuracy, bias
