@@ -12,6 +12,8 @@ build/
 # Node
 node_modules/
 frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.ts.timestamp-*.mjs
 
 # Env / local
 .env

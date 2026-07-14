@@ -77,4 +77,24 @@ pre-commit install
 | Milestone | Scope | Status |
 |---|---|---|
 | M0 | Scaffold, CI, pre-commit, README | ✅ |
-| M1 | Template engine, data model, gallery seeds, slot pre-generation 
+| M1 | Template engine, data model, gallery seeds, slot pre-generation | ⬜ |
+| M2 | Assignment engine (`SKIP LOCKED` leasing, balance under failure) | ⬜ |
+| M3 | Annotation UI (template renderer, collapsible guidelines) | ⬜ |
+| M4 | Quality subsystem (golds, reputation, agreement) | ⬜ |
+| M5 | Analytics + admin (project wizard, template gallery) | ⬜ |
+| M6 | Export, docs, seeded demo | ⬜ |
+
+## Repo layout
+
+```
+MiniLP/
+├── backend/          # FastAPI app: api/, models/, services/
+├── frontend/         # React + TS: Annotate, Admin, Reports views
+├── docs/             # DESIGN.md (decision log), architecture notes
+├── docker-compose.yml
+└── PLAN.md           # full project plan
+```
+
+## License
+
+MIT (to be added).

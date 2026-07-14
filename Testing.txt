@@ -1,0 +1,22 @@
+
+#M0 Testing
+
+# Backend
+cd backend
+pip install -e ".[dev]"
+ruff check . && ruff format --check .
+pytest
+uvicorn app.main:app --reload   # then curl localhost:8000/health
+
+# Frontend
+cd frontend
+npm install
+npm run build      # or `npm run dev` to see it at localhost:5173
+
+# Full stack
+docker compose up --build   # http://localhost:8000/health, http://localhost:5173
+
+# Pre-commit
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
