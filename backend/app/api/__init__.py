@@ -1,0 +1,1 @@
+"""FastAPI routers (§5)."""

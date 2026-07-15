@@ -1,19 +1,27 @@
 [project]
 name = "minilp-backend"
 version = "0.1.0"
-description = "MiniLP — mini labeling platform for pairwise preference judgments"
+description = "MiniLP - mini labeling platform for configurable human and model labeling"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic-settings>=2.4",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "jsonschema>=4.20",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "httpx>=0.27",
+    "httpx2>=2.7",
     "ruff>=0.6",
+    # Convenience only: lets `pytest` spin up a throwaway PostgreSQL when
+    # TEST_DATABASE_URL is unset. No Windows wheel exists, so it's marked
+    # non-Windows; on Windows set TEST_DATABASE_URL instead (see Testing.txt).
+    "pgserver>=0.1.4; sys_platform != 'win32'",
 ]
 
 [build-system]
@@ -25,19 +33,3 @@ include = ["app*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
-
-[tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "UP",  # pyupgrade
-    "B",   # bugbear
-    "SIM", # simplify
-]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
