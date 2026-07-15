@@ -5,8 +5,9 @@ partial indexes must be exercised on the real engine, not SQLite):
 
 - CI / any environment that sets ``TEST_DATABASE_URL`` uses that database.
 - Otherwise a throwaway PostgreSQL is started in-process via ``pgserver`` so the
-  suite is runnable with no external services. ``pgserver`` has no Windows wheel,
-  so on Windows (or anywhere it isn't installed) set ``TEST_DATABASE_URL``.
+  suite is runnable with no external services. It is an opt-in extra
+  (``pip install -e ".[dev,localdb]"``; no wheel for Windows or Python 3.14), so
+  when it is not installed set ``TEST_DATABASE_URL`` instead.
 
 If no database is configured *and* pgserver is unavailable, or the configured
 database can't be reached, the DB-backed tests **skip** with a clear message rather
@@ -21,11 +22,12 @@ import os
 import tempfile
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+
+from alembic import command
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -33,8 +35,9 @@ _NO_DB_HINT = (
     "Start PostgreSQL and point TEST_DATABASE_URL at it, e.g.\n"
     "    docker compose up -d db\n"
     "    TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test\n"
-    '(On Linux/macOS, `pip install -e ".[dev]"` also enables an automatic '
-    "in-process PostgreSQL via pgserver when TEST_DATABASE_URL is unset.)"
+    '(On Linux/macOS with Python <= 3.12, `pip install -e ".[dev,localdb]"` also '
+    "enables an automatic in-process PostgreSQL via pgserver when TEST_DATABASE_URL "
+    "is unset.)"
 )
 
 

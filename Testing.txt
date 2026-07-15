@@ -28,10 +28,14 @@ pre-commit run --all-files
 cd backend
 pip install -e ".[dev]"
 ruff check . && ruff format --check .
-# No external DB needed locally: conftest spins up an in-process PostgreSQL
-# (pgserver) and applies the Alembic migrations. To use your own DB instead:
-#   export TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test
-pytest -v            # 48 tests
+# Tests need a real PostgreSQL. Two options:
+#  (a) Point at your own DB:
+#      docker compose up -d db
+#      export TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test
+#  (b) Auto-spawn one in-process (Linux/macOS, Python <= 3.12):
+#      pip install -e ".[dev,localdb]"   # adds pgserver
+# Without either, the DB-backed tests skip cleanly (pure tests still run).
+pytest -v            # 48 tests (or 30 passed / 18 skipped without a DB)
 
 # --- Manual verification against a live stack ---
 docker compose up -d db                        # start PostgreSQL

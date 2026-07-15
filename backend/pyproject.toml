@@ -18,9 +18,13 @@ dev = [
     "pytest>=8.0",
     "httpx2>=2.7",
     "ruff>=0.6",
-    # Convenience only: lets `pytest` spin up a throwaway PostgreSQL when
-    # TEST_DATABASE_URL is unset. No Windows wheel exists, so it's marked
-    # non-Windows; on Windows set TEST_DATABASE_URL instead (see Testing.txt).
+]
+# Optional local-only helper: spins up a throwaway PostgreSQL so `pytest` needs no
+# external DB. Not in `dev` because it has no wheel for every OS/Python (e.g. no
+# Windows wheel, no Python 3.14 build). CI uses a real Postgres service via
+# TEST_DATABASE_URL and never needs this. Install with:
+#   pip install -e ".[dev,localdb]"   (Linux/macOS, Python <= 3.12)
+localdb = [
     "pgserver>=0.1.4; sys_platform != 'win32'",
 ]
 
@@ -33,3 +37,15 @@ include = ["app*"]
 
 [tool.ruff]
 line-length = 100
+target-version = "py312"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/*" = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
