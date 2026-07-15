@@ -13,7 +13,7 @@ Side-by-side preference judging is the flagship *built-in template*, not the pro
 
 ## 1. Core design principles
 
-1. **Templates define everything the annotator sees and returns.** A template = display blocks (what to show) + input fields (what to collect) + optional variant rules (how presentation is balanced). Adding a new labeling type means writing a template, not writing code.
+1. **Templates define everything the annotator sees and returns.** A template = layout (how the page is arranged) + display blocks (what to show, and how each renders) + input fields (which key-value pairs to collect, and their hotkeys) + optional variant rules (how presentation is balanced). Adding a new labeling type means writing a template, not writing code — and the fastest path is cloning an existing one and editing.
 2. **Humans and model judges are the same thing to the system.** An annotator has `kind: human | model`. Both are assigned slots by the same engine, answer golds, accrue reputation, and count toward agreement. A judge's reputation is its measured calibration. Everything downstream (merge weights, gating) works uniformly.
 3. **Store canonical data, present blinded data.** The database knows the ground truth about each unit (source models, expected answers, variant assignment). Annotators — human or model — see only what the template renders.
 4. **Record raw and canonical answers.** For variant-balanced templates, every label stores both the raw input (side clicked) and the canonical value (item chosen) — position bias is measurable for judges too (LLMs have well-documented order bias).
@@ -33,24 +33,41 @@ A template is a versioned JSON document:
 {
   "name": "image-classification",
   "version": 1,
+  "layout": {                     // how the page is arranged (§2.2)
+    "arrangement": "split",       // "stack" (default) | "split" | "columns"
+    "ratio": [3, 2],              // relative region widths for split/columns
+    "width": "xl"                 // content width token: md | lg | xl | full
+  },
   "display": [                    // ordered blocks shown to the annotator
-    { "type": "image", "source": "$unit.image_url" },
-    { "type": "text",  "source": "$unit.context", "optional": true }
+    { "type": "image", "source": "$unit.image_url",
+      "render": { "fit": "contain", "zoom": true } },
+    { "type": "text",  "source": "$unit.context", "optional": true,
+      "render": { "collapsible": true, "max_lines": 12 } }
   ],
-  "inputs": [                     // fields the annotator fills
-    {
+  "inputs": [                     // fields the annotator fills — each id becomes
+    {                             // a key in the judgment object (§2.3)
       "id": "category",
       "type": "radio",
       "label": "What is shown in the image?",
       "options": ["cat", "dog", "bird"],
-      "allow_other": true         // renders an "Other…" option with free-text entry
+      "allow_other": true,        // renders an "Other…" option with free-text entry
+      "required": true,
+      "hotkeys": "auto"           // 1/2/3 + o for Other (§2.4)
+    },
+    {
+      "id": "quality_flags",
+      "type": "checkbox",
+      "label": "Quality issues",
+      "options": ["blurry", "multiple subjects"],
+      "hotkeys": ["b", "m"],      // explicit letter overrides
+      "required": false
     }
   ],
-  "variants": null                // or a balancing spec, see §2.3
+  "variants": null                // or a balancing spec, see §2.7
 }
 ```
 
-**Display block types (v1):** `text`, `markdown`, `image`, `audio`, `html_snippet` (sandboxed), `panel_group` (N side-by-side panels, contents drawn from unit payload per the active variant).
+**Display block types (v1):** `text`, `markdown`, `image`, `audio`, `code` (syntax-highlighted), `html_snippet` (sandboxed), `panel_group` (N side-by-side panels, contents drawn from unit payload per the active variant).
 
 **Input field types (v1):** `radio` (with `allow_other`), `checkbox` (multi-select, with `allow_other`), `likert` (labeled scale), `free_text`, `choice_buttons` (large keyboard-mapped buttons, e.g. Left/Tie/Right), `span_select` (highlight spans in a text block — stretch goal, may slip past M6).
 
@@ -58,17 +75,57 @@ A template is a versioned JSON document:
 
 **Templates render for judges too:** each display/input type has a text serialization (images pass as URLs/attachments to multimodal judges), so a judge prompt is assembled mechanically from guidelines + serialized template + unit payload + answer-format instructions. One template drives both the human UI and the judge prompt.
 
-### 2.2 Extensibility contract
+### 2.2 Layout & rendering control
+
+- **Arrangement:** `stack` (display blocks top-to-bottom, inputs below — the mobile-safe default), `split` (display region beside the input rail — classification at speed), `columns` (explicit regions with per-block placement — dense comparison layouts). `panel_group` manages its own interior columns in any arrangement.
+- **Per-block `render` options,** validated per type: images (`fit`, `zoom`, lightbox), text/markdown (`collapsible`, `max_lines` with expand), code (`language`, line numbers), audio (waveform, playback-speed control), panels (`sync_scroll`, `diff_highlight` for near-identical outputs).
+- **Design tokens, not free-form CSS:** templates choose from a fixed token set (width, density, panel emphasis); the app supplies the visual system — card-based surfaces, a typographic scale tuned for long reading, light/dark theme (annotator-toggleable, `d`), and motion kept to instant feedback (selection states, submit flash) so throughput never waits on animation. Modern, but never at the cost of speed.
+- Layout and render options are presentation-only: they never affect stored values, so a template can be restyled mid-project without invalidating collected labels (schema-affecting edits still bump the version, §2.5).
+
+### 2.3 Judgments are key-value objects
+
+Every input `id` is a key; a submitted judgment is one JSON object:
+
+```jsonc
+// raw (what was entered)                  // value (canonicalized)
+{ "category": "other:capybara",           { "category": "capybara",
+  "quality_flags": ["blurry"] }             "quality_flags": ["blurry"] }
+```
+
+- Each input type declares its value shape (radio → string, checkbox → string array, likert → int, free_text → string, choice_buttons → enum) — this is what golds match against (per key), agreement is computed on (per key), and exports emit.
+- `required` gates submission; optional keys may be absent.
+- `show_if` (v1.1): conditional inputs, e.g. show `severity` only when a violation category is checked — the dependent key is only collected (and only graded) when its condition held.
+
+### 2.4 Keyboard-first judging (hotkeys)
+
+Every interactive element is reachable from the keyboard — numbers and letters judge; the mouse is optional:
+
+- **Auto-assignment (`"hotkeys": "auto"`, the default):** the first choice-type input's options get `1…9`; subsequent inputs' options get letters (`a, b, c…`), skipping reserved keys. `allow_other` gets `o`. `likert` maps to `1…N`. `choice_buttons` may bind arrows (side-by-side keeps `←`/`↓`/`→`).
+- **Explicit override:** any option can pin its key (`"hotkeys": ["b", "m"]`) — clones keep muscle memory stable when options are reordered.
+- **Reserved:** `Enter` submit (auto-submits when the template has a single required input — one keystroke per task), `s` skip, `g` guidelines, `d` dark mode, `u` undo last selection, `?` hotkey overlay (dims the screen and badges every element with its key).
+- **Validation:** hotkey conflicts (duplicate keys, reserved-key collisions) are template-validation errors at save time, not runtime surprises.
+- Keys are rendered as small badges on each option — discoverable without the overlay.
+
+### 2.5 Creating, cloning & versioning templates
+
+The intended workflow is **clone → tweak → go**, not blank-page authoring:
+
+- **Clone anything:** every gallery or custom template has a one-click *Use as starting point* (`POST /templates/{id}:clone`) producing an editable draft — built-ins are immutable, so cloning is also how you "edit" one.
+- **Edit with live preview:** the template editor shows a validated JSON editor (schema-aware autocomplete for block/input/render types) beside a live preview rendering a sample unit — every change re-renders instantly, including layout, hotkey badges, and the `?` overlay. A visual (no-code) builder stays post-v1; the JSON editor with preview is the v1 bar for the ML-savvy audience.
+- **Versioning:** presentation-only edits (layout, render options, hotkeys) update in place; schema-affecting edits (inputs added/removed/retyped, options changed, variants) bump the version. Units and labels pin the version they were collected under, so a running project is never silently re-shaped.
+- **Draft → publish:** drafts are only attachable to projects once validation passes (payload refs resolve, hotkeys conflict-free, variant divisibility holds).
+
+### 2.6 Extensibility contract
 
 Adding a new input or display type touches exactly four places, documented in `docs/extending.md`:
 1. JSON-schema fragment for the type's config (backend validation),
-2. a React component registered in the frontend widget registry,
+2. a React component registered in the frontend widget registry (declaring its render options and hotkey behavior),
 3. an optional canonicalizer (raw answer → canonical value) on the backend,
 4. a text/prompt serializer for judge consumption (a default exists; override when the naive rendering is lossy).
 
 Everything else — assignment, leasing, golds, agreement, reputation, merging, export — is template-agnostic because it operates on JSON payloads and JSON answers.
 
-### 2.3 Variants and counterbalancing (generalized from side-by-side)
+### 2.7 Variants and counterbalancing (generalized from side-by-side)
 
 Some templates present the same unit in multiple equivalent arrangements. A template may declare a **variant dimension**:
 
@@ -89,7 +146,7 @@ Rules (applied to any variant-bearing template):
 
 Templates without variants (plain classification, rating) simply set `variants: null` and get one slot pool.
 
-### 2.4 What gets stored per label
+### 2.8 What gets stored per label
 
 | Field | Meaning |
 |---|---|
@@ -126,12 +183,18 @@ Schema-first: judge/pipeline tables exist from M1 even though they're exercised 
 ```
 templates       (id, name, version, description, kind: builtin|custom,
                  schema jsonb, created_at)         -- immutable per version
-projects        (id, name, description, template_id,
+projects        (id, name, description, template_id, template_version,
                  guidelines_md,                     -- annotator instructions (markdown)
-                 labels_per_unit, gold_ratio, lease_minutes, min_reputation,
+                 labels_per_unit,                   -- "overlap": valid labels per unit (§6.4)
+                 max_labels_per_unit,               -- ceiling for dynamic overlap growth (§6.4)
+                 agreement jsonb,                   -- per-key consensus policy (§6.4)
+                 gold_ratio, lease_minutes, min_reputation,
                  pipeline jsonb,                    -- routing policy stages (§7.2)
                  config jsonb, created_at)
-units           (id, project_id, payload jsonb,
+batches         (id, project_id, name, source_filename,
+                 unit_count, rejected_count, created_at)   -- one per bulk upload
+units           (id, project_id, batch_id, payload jsonb,
+                 priority int default 0,            -- assignment order (§6.4)
                  is_gold, gold_expected jsonb,
                  status: pending|in_progress|labeled|finalized)
 slots           (id, unit_id, variant jsonb,
@@ -178,10 +241,19 @@ Key constraints:
 ```
 GET    /templates                          list gallery (builtin + custom)
 POST   /templates                          create custom template (JSON, validated)
+POST   /templates/{id}:clone               copy any template into an editable draft (§2.5)
+PUT    /templates/{id}                     edit draft/custom (schema changes bump version)
 POST   /templates/{id}/preview             render-check a sample unit payload
-POST   /projects                           create project (template, guidelines, pipeline)
-POST   /projects/{id}/units:bulk           bulk-load units (JSONL), payloads validated
+POST   /projects                           create project (template, guidelines, overlap,
+                                           agreement policy, pipeline)
+POST   /projects/{id}/units:bulk           bulk-load units (JSONL: payload, priority,
+                                           gold fields) → creates a batch, returns
+                                           per-row validation report
 POST   /projects/{id}/pairs:generate       side-by-side helper: build units from items
+GET    /projects/{id}/units                browse/filter units (status, batch, priority,
+                                           agreement, gold) + per-unit label detail
+PATCH  /units/{id}                         adjust priority; void/requeue
+POST   /projects/{id}/units:reprioritize   bulk priority update (by batch or filter)
 GET    /tasks/next?annotator=...           assignment engine (humans and judge workers)
 POST   /tasks/{slot_id}/submit             submit label (validated, canonicalized)
 POST   /tasks/{slot_id}/skip               release lease
@@ -192,7 +264,9 @@ POST   /projects/{id}/judges:run           orchestrator: run enrolled judges ove
 GET    /projects/{id}/review               human approval queue (escalated units)
 POST   /units/{id}/finalize                approve / override merged label
 
-GET    /projects/{id}/progress             completion; per-variant fill; pipeline stage counts
+GET    /projects/{id}/progress             status funnel, per-batch and per-variant fill,
+                                           per-key consensus rates, pipeline stage counts,
+                                           throughput (labels/hr) + ETA at current rate
 GET    /projects/{id}/analytics/agreement  kappa, per-unit entropy (humans vs judges vs both)
 GET    /projects/{id}/analytics/bias       variant-bias metrics — humans AND judges (§9)
 GET    /projects/{id}/analytics/costs      judge spend, cache hit rate, $/label
@@ -221,6 +295,22 @@ Composite in [0, 1], recomputed on each `reputation_event`: gold accuracy (domin
 ### 6.3 Agreement metrics
 - Cohen's kappa (K=2) / Fleiss' kappa (K>2) on canonical values, per input field — computed within humans, within judges, and human-vs-judge (the last one is the interesting research artifact).
 - Per-unit vote entropy separates genuinely ambiguous units from noisy raters — and drives escalation (§7.2) and active learning (§8).
+
+### 6.4 Overlap, consensus & prioritization
+
+- **Overlap** = `labels_per_unit` (K): how many valid labels each unit collects. Set per project; must satisfy variant divisibility (§2.7). This is the redundancy knob — K=1 for cheap pre-labeling passes, K=3–5 for quality-critical sets.
+- **Per-key agreement policy** (`projects.agreement`): each input key declares how its votes are compared and what consensus is required:
+
+  ```jsonc
+  "agreement": {
+    "category":      { "match": "exact",    "min_consensus": 0.67 },
+    "fluency":       { "match": "within",   "tolerance": 1 },       // likert ±1 counts as agreeing
+    "quality_flags": { "match": "jaccard",  "threshold": 0.5 }
+  }
+  ```
+
+- **Dynamic overlap growth:** when a unit's K labels are in and any key misses `min_consensus`, the system can open additional slots (variant-balanced, up to `max_labels_per_unit`) instead of — or before — escalating to review. Policy per project: `on_disagreement: escalate | grow_then_escalate`.
+- **Prioritization:** every unit carries an integer `priority` (set at upload, editable later, bulk-adjustable). The assignment engine orders open slots by `priority DESC, unit created_at ASC` *within* the balance constraints — urgent batches drain first without breaking counterbalancing. Golds inject independently of priority so high-priority bursts stay quality-checked.
 
 ---
 
@@ -286,30 +376,49 @@ No new trigger logic — webhooks fire off checks that already exist in §6–§
 
 ## 11. Frontend (React + TS)
 
-- **Annotation view:** template-driven renderer — display blocks top-to-bottom, inputs below, keyboard-first. **Collapsible guidelines panel** (expanded on first task, `g` toggles). Progress bar, skip, session stats. Never shows model names, variant values, or A/B identity.
+- **Annotation view:** template-driven renderer honoring the template's layout/render options (§2.2), hotkey engine with badges + `?` overlay (§2.4), **collapsible guidelines panel** (expanded on first task, `g` toggles), progress bar, skip, session stats, light/dark theme. Never shows model names, variant values, or A/B identity. Visual bar: modern card-based surfaces and crisp type — but every interaction is instant; throughput beats decoration.
 - **Review queue (M8):** escalated units with merged proposal, per-judge votes + reasoning traces, one-key approve/override — throughput-optimized like the annotation view.
-- **Widget registry:** one React component per display/input type — the frontend half of the extensibility contract (§2.2).
-- **Admin — new project wizard:** pick a template from the gallery (live mini-previews) **or start from scratch** (validated JSON editor + live preview); guidelines editor; unit upload with validation report; K / gold ratio / thresholds; pipeline editor (M8).
-- **Admin dashboard:** progress by variant and by pipeline stage, agreement and bias charts (split human/judge), judge cost panel, annotator table with reputation, AL iteration curves (M9).
-- Deliberately plain, fast, keyboard-first.
+- **Widget registry:** one React component per display/input type, each declaring its hotkey behavior and render options — the frontend half of the extensibility contract (§2.6).
+- **Template editor:** clone-from-gallery or from-scratch; validated JSON editor with autocomplete beside a live preview (layout, hotkeys, overlay all live) — §2.5.
+- **Admin — new project wizard:** pick/clone template → guidelines editor (markdown + preview) → unit upload (JSONL drop, per-row validation report, batch naming, priority column) → overlap K / agreement policy / gold ratio / thresholds → pipeline editor (M8).
+- **Progress view (per project):** status funnel (pending → in progress → labeled → finalized); per-batch progress bars; per-variant fill (paired bars — visual proof of counterbalancing); per-key consensus rates with drill-down to disagreeing units; throughput and ETA; unit browser (filter by status/batch/priority/agreement/gold) opening a per-unit detail drawer: payload preview, each label with annotator kind + reputation + variant, agreement state, escalation history.
+- **Admin dashboard:** progress summary across projects, agreement and bias charts (split human/judge), judge cost panel, annotator table with reputation, AL iteration curves (M9).
 
 ---
 
 ## 12. Milestones
 
+### 12.0 Execution notes (for coding agents — Sonnet/Opus, read first)
+
+- **One milestone per session; land it green.** Each milestone below lists *Deliverables* (what files/modules exist afterward) and *Acceptance* (tests that must pass). Do not start a milestone until the previous one's acceptance suite is green in CI.
+- **Layout conventions:** backend code in `backend/app/{api,models,services,schemas}/`; one service package per domain (`templates/`, `assignment/`, `quality/`, `judges/`, `merge/`, `analytics/`); Pydantic schemas mirror API payloads; every service function unit-tested in `backend/tests/` (mirror the package path). Frontend views in `frontend/src/views/`, widgets in `frontend/src/widgets/` (one file per display/input type), API client in `frontend/src/api/`.
+- **Database:** every schema change is an Alembic migration; never edit an applied migration. Tests run against Postgres via docker compose (`pytest` uses a `TEST_DATABASE_URL`), not SQLite — `SKIP LOCKED` and partial indexes must be tested on the real engine.
+- **Template engine invariants** (assert everywhere, they are the product): (1) slot counts per variant value are exactly K/n at creation and at completion; (2) an annotator never labels the same unit twice; (3) presentation-only template edits never bump versions, schema edits always do; (4) hotkey conflicts fail validation at save time.
+- **When in doubt, check §2 (templates), §6.4 (overlap/priority), §7.2 (routing) — they are the spec.** DESIGN.md gets a decision-log entry whenever an implementation deviates from this plan.
+
 **M0 — Scaffold: ✅ done.** Monorepo layout, Ruff + pytest + GitHub Actions CI, pre-commit, README skeleton with architecture diagram.
 
-**M1 — Template engine + full data model:** SQLAlchemy + Alembic for *all* of §4 (incl. `users.role`, `annotators.kind`, `judge_configs`, `final_labels`, `projects.pipeline`, `webhooks` — schema-first, unused until M7/M10); template JSON schema + validation; gallery seed data; unit ingest with payload validation; slot pre-generation with variant balance. *Tests: slot counts exactly K/n per variant value; payload validation rejects malformed units; every gallery template round-trips validate → preview.*
+**M1 — Template engine + full data model.**
+*Deliverables:* SQLAlchemy models + Alembic migrations for *all* of §4 (incl. `users.role`, `annotators.kind`, `judge_configs`, `final_labels`, `projects.pipeline`, `batches`, `webhooks` — schema-first, some unused until M7/M10); template JSON-schema validation incl. layout/render/hotkey rules (§2.1–§2.4); clone + versioning endpoints (§2.5); gallery seed data (all §3 templates); `units:bulk` ingest with batch creation, per-row validation report, priority column; slot pre-generation with variant balance.
+*Acceptance:* slot counts exactly K/n per variant value for every unit; malformed payload rows rejected with row numbers, valid rows ingested; duplicate/reserved hotkeys fail template save; clone of a builtin is editable, original untouched; schema edit bumps version, layout edit doesn't; every gallery template round-trips validate → preview.
 
-**M2 — Assignment engine:** leasing with `SKIP LOCKED`, lease-expiry sweeper, annotator-unit exclusion, gold injection, skip/void → slot reopening with variant retained, role-gated API auth (admin/reviewer/annotator, §5). *Tests: concurrency test with N simulated annotators proving no double-assignment and preserved variant balance under abandonment — a README highlight; role-gating test proving an annotator token can't hit admin/reviewer endpoints.*
+**M2 — Assignment engine.**
+*Deliverables:* leasing with `SELECT … FOR UPDATE SKIP LOCKED`; lease-expiry sweeper; annotator-unit exclusion; gold injection at `gold_ratio`; skip/void → slot reopening with variant retained; priority-ordered assignment (`priority DESC, created_at ASC` within balance constraints, §6.4); role-gated API auth (admin/reviewer/annotator, §5).
+*Acceptance:* concurrency test with N simulated annotators proving no double-assignment and preserved variant balance under abandonment — a README highlight; high-priority batch drains first without breaking per-variant balance; role-gating test proving an annotator token can't hit admin/reviewer endpoints.
 
-**M3 — Annotation UI:** template renderer + widget registry (all v1 types), collapsible guidelines panel, `next`/`submit` wiring, keyboard flow, session stats. *Tests: each gallery template renders and submits end-to-end.*
+**M3 — Annotation UI.**
+*Deliverables:* template renderer honoring layout arrangements + per-block render options (§2.2); widget registry (all v1 display/input types); hotkey engine — auto-assignment, overrides, badges, `?` overlay, reserved keys, single-input auto-submit (§2.4); collapsible guidelines panel; `next`/`submit`/`skip` wiring; session stats; light/dark theme.
+*Acceptance:* each gallery template renders and submits end-to-end (Playwright); every gallery task completable with keyboard only — zero mouse events; hotkey overlay shows the correct key for every interactive element.
 
-**M4 — Quality subsystem:** golds (per-input expected-answer matching), reputation engine, agreement metrics, assignment gating.
+**M4 — Quality subsystem.**
+*Deliverables:* gold grading (per-key expected-answer matching using §6.4 match rules); reputation engine + events; agreement metrics (kappa per key, per-unit entropy); consensus evaluation with dynamic overlap growth (`grow_then_escalate`, §6.4); assignment gating on `min_reputation`.
+*Acceptance:* below-threshold gold accuracy pauses an annotator and voids/reopens their recent slots with balance preserved; a planted disagreeing unit grows to `max_labels_per_unit` then escalates; kappa matches hand-computed fixtures.
 
-**M5 — Analytics + admin:** agreement/label-distribution analytics; §9 bias metrics with CIs; admin dashboard; new-project wizard with template gallery and from-scratch editor.
+**M5 — Analytics + progress UX + admin.**
+*Deliverables:* progress endpoint (funnel, per-batch, per-variant, per-key consensus, throughput/ETA); progress view + unit browser + per-unit detail drawer (§11); §9 bias metrics with CIs; agreement/label-distribution analytics; admin dashboard; new-project wizard (clone/scratch template step, guidelines, upload with validation report, overlap/agreement/gold config).
+*Acceptance:* progress numbers reconcile exactly with DB state under a seeded scenario (counts, consensus rates, ETA formula); unit browser filters compose; wizard creates a working project end-to-end from a JSONL fixture.
 
-**M6 — Export, docs, demo (human-MVP release):** JSONL exports, `docs/DESIGN.md` decision log, `docs/extending.md`, seeded demo (two sample projects), README GIF.
+**M6 — Export, docs, demo (human-MVP release):** JSONL exports (§10), `docs/DESIGN.md` decision log, `docs/extending.md`, seeded demo (two sample projects: side-by-side + image classification), README GIF. *Acceptance: `docker compose up` → annotate the demo in <2 min; export re-imports cleanly.*
 
 **M7 — Judge orchestrator:** provider abstraction (Anthropic, OpenAI, OpenAI-compatible/local endpoints), judge configs + versioned prompts, prompt assembly from templates, confidence/reasoning capture, retries/rate limits/budget caps/caching/dry-run, judges enrolled as annotators through the standard assignment loop, `budget.cap_reached` / `gold.accuracy_dropped` webhook events (§7.3). *Tests: a mock-provider judge fills slots respecting balance and golds; cache prevents duplicate spend; budget cap hard-stops and fires its webhook.*
 
@@ -337,7 +446,7 @@ MiniLP/
 │                       # widgets/ — display & input component registry
 ├── docs/
 │   ├── DESIGN.md       # decision log — the "Principal engineer" artifact
-│   ├── extending.md    # how to add display/input types (§2.2 contract)
+│   ├── extending.md    # how to add display/input types (§2.6 contract)
 │   └── architecture.md
 ├── docker-compose.yml
 ├── PLAN.md             # this file
