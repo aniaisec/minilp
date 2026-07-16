@@ -1,5 +1,6 @@
 """API request/response models (§5)."""
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -73,3 +74,48 @@ class UnitOut(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class TaskOut(BaseModel):
+    """A leased task handed to an annotator (§5 GET /tasks/next).
+
+    Deliberately blind: never exposes ``is_gold`` — golds must be
+    indistinguishable in the UI and in judge prompts (§6.1). The variant is
+    included (drives rendering) but carries no A/B identity for the annotator.
+    """
+
+    slot_id: int
+    unit_id: int
+    project_id: int
+    payload: dict[str, Any]
+    variant: dict[str, Any] | None = None
+    lease_expires_at: datetime | None = None
+
+
+class SubmitRequest(BaseModel):
+    raw: dict[str, Any] = Field(description="Exactly what the annotator entered, per input id.")
+    value: dict[str, Any] | None = Field(
+        default=None,
+        description="Canonicalized answer; defaults to raw for variant-free templates.",
+    )
+    confidence: float | None = None
+    reasoning: str | None = None
+    comment: str | None = None
+
+
+class LabelOut(BaseModel):
+    id: int
+    slot_id: int
+    unit_id: int
+    annotator_id: int
+    value: dict[str, Any]
+    is_valid: bool
+
+    model_config = {"from_attributes": True}
+
+
+class UnitPatch(BaseModel):
+    """Adjust a unit's priority and/or void+requeue it (§5 PATCH /units/{id})."""
+
+    priority: int | None = None
+    void: bool = Field(default=False, description="Void valid labels and reopen slots.")

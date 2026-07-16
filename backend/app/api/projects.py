@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin, require_annotator
 from app.db import get_db
-from app.models import Project, Unit
+from app.models import Project, Unit, User
 from app.schemas.api import (
     BulkIngestRequest,
     ProjectCreate,
@@ -19,7 +20,9 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
-def post_project(body: ProjectCreate, db: Session = Depends(get_db)) -> Project:
+def post_project(
+    body: ProjectCreate, db: Session = Depends(get_db), _user: User = Depends(require_admin)
+) -> Project:
     try:
         return create_project(db, **body.model_dump())
     except ProjectError as e:
@@ -28,7 +31,10 @@ def post_project(body: ProjectCreate, db: Session = Depends(get_db)) -> Project:
 
 @router.post("/{project_id:int}/units:bulk")
 def post_bulk_units(
-    project_id: int, body: BulkIngestRequest, db: Session = Depends(get_db)
+    project_id: int,
+    body: BulkIngestRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
 ) -> dict:
     project = db.get(Project, project_id)
     if project is None:
@@ -51,6 +57,7 @@ def get_units(
     batch_id: int | None = Query(default=None),
     is_gold: bool | None = Query(default=None),
     db: Session = Depends(get_db),
+    _user: User = Depends(require_annotator),
 ) -> list[Unit]:
     if db.get(Project, project_id) is None:
         raise HTTPException(status_code=404, detail="project not found")

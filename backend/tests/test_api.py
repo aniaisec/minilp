@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.main import app
-from app.models import Template
+from app.models import Template, User
+from app.services.auth.roles import hash_api_key
 from app.services.templates.seed import seed_templates
 
 
@@ -25,14 +26,17 @@ def client(engine):
         finally:
             s.close()
 
-    # Seed builtins once for the API surface.
+    # Seed builtins + an admin user for the (now auth-gated) API surface.
     seeder = Session(bind=engine, expire_on_commit=False)
     seed_templates(seeder)
+    seeder.add(User(email="admin@x.com", role="admin", api_key_hash=hash_api_key("admin-key")))
     seeder.commit()
     seeder.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
+    c = TestClient(app)
+    c.headers.update({"Authorization": "Bearer admin-key"})  # admin token by default
+    yield c
     app.dependency_overrides.clear()
 
     cleanup = Session(bind=engine)

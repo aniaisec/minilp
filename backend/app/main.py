@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from app.api import projects, templates
+from app.api import projects, tasks, templates, units
 
 app = FastAPI(
     title="MiniLP",
@@ -12,6 +12,8 @@ app = FastAPI(
 
 app.include_router(templates.router)
 app.include_router(projects.router)
+app.include_router(units.router)
+app.include_router(tasks.router)
 
 
 @app.get("/health")

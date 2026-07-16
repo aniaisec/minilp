@@ -52,6 +52,57 @@ via the `pgserver` package, and builds the schema by running the Alembic migrati
 (so the migrations themselves are under test). This keeps `pip install -e ".[dev]"`
 + `pytest` runnable anywhere while honoring the "real Postgres" rule.
 
+## M2 — Assignment engine
+
+### Leasing is a single atomic `SELECT … FOR UPDATE SKIP LOCKED`
+`next_task` selects the best eligible open slot and locks it in one statement
+(`services/assignment/engine.py::_open_slot_query`), so N concurrent workers —
+human or judge — never lease the same slot. Eligibility (annotator-unit
+exclusion, gold-ness, priority) is expressed in the `WHERE`/`ORDER BY`, so the
+lock is taken on exactly the row we hand out. Proven by `test_concurrency.py`
+(N annotators, abandonment, exact per-variant balance at completion).
+
+### State-changing writes are row-locked ORM reads, never read-then-write on cached objects
+The app uses `expire_on_commit=False`, so a session keeps a stale view of a slot
+it leased earlier. `submit_label`/`skip_task` therefore re-read the slot with
+`db.get(..., with_for_update=True, populate_existing=True)` and re-check
+`status='leased' AND leased_by=me` under the row lock before writing. Without this
+a worker whose lease was reclaimed (expired → swept → taken by someone else) could
+write a *second* label onto the same slot (two different annotators, same slot —
+the per-(annotator,unit) index doesn't catch it). This is the single most
+important correctness decision in M2.
+
+### Unit status is computed under a unit-row lock
+`_recompute_unit_status` locks the unit row (`SELECT … FOR UPDATE`) before reading
+its slots' statuses. Under `READ COMMITTED`, two workers filling a unit's last two
+slots can each miss the other's not-yet-committed fill and both write
+`in_progress`, leaving a fully-filled unit stuck. Locking the unit serializes the
+computation so whichever writer commits second sees the complete picture and marks
+it `labeled`.
+
+### Gold injection is a deterministic deficit rule, not a coin flip
+`should_serve_gold(served, golds_served, ratio)` serves a gold when delivered golds
+fall behind `floor((served+1)·ratio)`. Deterministic (no RNG) so the injected
+fraction is exactly `floor(n·ratio)` and unit-testable, while still interleaving
+golds throughout a session. Golds inject independently of priority (§6.4): the rule
+picks gold-vs-real, then the same priority-ordered query selects within that pool.
+
+### Expiry sweeper reopens with variant retained
+`sweep_expired_leases` reclaims leases past `lease_expires_at` with a single
+locked bulk read (`SKIP LOCKED`, so concurrent sweepers/workers never contend),
+resetting `status→open, leased_by→NULL` but never touching `variant`. Abandoned,
+expired, and voided slots all return to the pool keeping their variant designation,
+so counterbalancing survives failure (§2.7). Run opportunistically at the head of
+`next_task` and safe to run as a background loop.
+
+### Role gating is rank-inclusive, declared per endpoint
+`services/auth/roles.py` hashes API keys (SHA-256) and ranks
+`admin > reviewer > annotator`. Endpoints accept a minimum role; listing
+`{"annotator"}` also admits reviewers/admins, `{"admin"}` admits only admins. The
+gate is injected as a FastAPI **parameter dependency** (`_user: User =
+Depends(require_admin)`), not the router's `dependencies=[...]` list, because the
+pinned FastAPI build only reliably runs signature-parameter dependencies.
+
 ## Planned (later milestones)
-- Slot leasing with `SELECT ... FOR UPDATE SKIP LOCKED` (M2)
-- Reputation weighting (M4)
+- Reputation weighting + `min_reputation` assignment gating (M4)
+- Dynamic overlap growth on disagreement (M4, §6.4)

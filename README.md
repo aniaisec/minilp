@@ -77,8 +77,8 @@ pre-commit install
 | Milestone | Scope | Status |
 |---|---|---|
 | M0 | Scaffold, CI, pre-commit, README | ✅ |
-| M1 | Template engine, data model, gallery seeds, slot pre-generation | ⬜ |
-| M2 | Assignment engine (`SKIP LOCKED` leasing, balance under failure) | ⬜ |
+| M1 | Template engine, data model, gallery seeds, slot pre-generation | ✅ |
+| M2 | Assignment engine (`SKIP LOCKED` leasing, balance under failure) | ✅ |
 | M3 | Annotation UI (template renderer, collapsible guidelines) | ⬜ |
 | M4 | Quality subsystem (golds, reputation, agreement) | ⬜ |
 | M5 | Analytics + admin (project wizard, template gallery) | ⬜ |
