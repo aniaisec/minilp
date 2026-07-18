@@ -103,6 +103,97 @@ gate is injected as a FastAPI **parameter dependency** (`_user: User =
 Depends(require_admin)`), not the router's `dependencies=[...]` list, because the
 pinned FastAPI build only reliably runs signature-parameter dependencies.
 
+## M3 — Annotation UI
+
+### Hotkey assignment is ported to TypeScript, not fetched from the backend
+`hotkeys/assign.ts` is a line-for-line port of `services/templates/hotkeys.py`
+(digits for the first choice input, a single shared letter pool for the rest,
+reserved-key exclusions, arrow normalization, `o` for Other). Duplicating logic is
+normally a smell, but the alternative — asking the API for a key map per task — puts
+a network round-trip in the annotator's critical path and makes badges a
+render-blocking dependency. The invariant that matters is that badges match what
+template validation accepted at save time, so the port is pinned by
+`assign.test.ts`, which asserts the exact key map for every gallery template. If the
+two ever drift, those tests fail rather than annotators silently seeing wrong keys.
+
+### DEVIATION: canonicalization currently runs client-side (§2.6 puts it on the backend)
+§2.6 lists "an optional canonicalizer (raw answer → canonical value) on the backend"
+as one of the four extension points, and `submit_label` notes canonicalization is
+"layered on in M3/M4". As shipped, the **frontend** computes `value` (positional
+Left/Right → item A/B under the slot's `panel_order`; `other:` prefix stripping) and
+`POST /tasks/{slot}/submit` stores whatever `value` it is handed.
+
+This is a trust-boundary problem, not just a layering one: a buggy or hostile client
+can submit a `value` inconsistent with its `raw`, which would silently corrupt bias
+analytics (§9) and merge decisions (§7.2). It also means judge workers (M7) would
+have to re-implement the same mapping to stay consistent with humans.
+
+Accepted for M3 because the renderer is the thing that knows the variant→panel
+mapping and the milestone is UI-scoped. **Action for M4:** move canonicalization
+into a backend service (`services/quality/canonical.py`), derive `value` from `raw` +
+`slot.variant` server-side, and treat a client-supplied `value` as advisory only
+(compare-and-warn, or reject on mismatch). The frontend function should then be
+deleted rather than left as a second source of truth.
+
+### DEVIATION: acceptance covered by jsdom component tests, not Playwright
+M3's acceptance names Playwright for "each gallery template renders and submits
+end-to-end". Shipped instead: `views/Annotate.test.tsx` (Vitest + Testing Library,
+jsdom), which drives the same three criteria — every gallery template renders and
+submits, tasks complete via `fireEvent.keyDown` only (no mouse events anywhere in the
+suite, which is a stronger guarantee than "we didn't click" in a browser), and the
+`?` overlay badges the correct key for every interactive element. Rationale: these
+run in-process in CI with no browser download or live stack, so they gate every PR
+cheaply. The gap this leaves is real — no actual browser engine, no CSS layout
+verification, no proof the Vite build wires up. A Playwright smoke test over the
+seeded demo is the right addition when the M6 demo lands.
+
+### Presentation-only render options deferred (§2.2)
+Implemented: `collapsible`, `max_lines`, `fit`, `line_numbers`, `language` (as a
+label), `waveform`, `playback_speed`. Stubbed or deferred: `sync_scroll` (renders as
+a `data-sync-scroll` attribute with no scroll coupling), `diff_highlight`, image
+`zoom`/`lightbox` (cursor affordance only), and code syntax highlighting. All four
+are presentation-only by §2.2 — they cannot affect stored values — so deferring them
+does not invalidate collected labels, and they can land in M5 alongside the other UI
+work. `sync_scroll`/`diff_highlight` matter most (side-by-side is the flagship) and
+should be first.
+
+### Markdown is a minimal escaped subset, not a library
+`render/markdown.ts` escapes HTML first, then applies headings/bold/italic/inline
+code/links/lists. Chosen over a markdown dependency because unit payloads are
+attacker-influenced in the general case (they're uploaded data rendered into an
+annotator's browser), and an escape-first subset is trivially auditable. `html_snippet`
+blocks, which by definition carry markup, are isolated in a `sandbox=""` iframe so
+embedded scripts cannot run. Revisit if templates need tables/footnotes.
+
+### Theme is set on `<html>`, not the view root
+The light/dark tokens are declared under `[data-theme="dark"]`, and `body` draws its
+background from `--bg`. Setting the attribute on an inner element leaves `body`
+outside the themed subtree, so the page background stays light in dark mode. The
+attribute is therefore applied to `document.documentElement` via an effect (restoring
+the prior value on unmount so tests don't leak state between cases).
+
+### The progress bar is session-scoped until M5
+§11 lists a progress bar in the annotation view, but true project completion needs
+`GET /projects/{id}/progress` (M5). Until then the bar tracks labels submitted this
+session against a `sessionGoal` prop (default 25) — momentum feedback for the
+annotator without inventing a project-completion number the frontend cannot know.
+
+### Auto-submit is restricted to single-input choice templates
+§2.4's "auto-submits when the template has a single required input" is implemented as:
+exactly one input on the template, of type `radio`/`likert`/`choice_buttons`, and the
+chosen value is not an in-progress `Other…` entry. Multi-select (`checkbox`) and free
+text are excluded because a keystroke there is rarely the annotator's final answer,
+and firing early would cost a label. Everything else submits on `Enter`.
+
+### Not built (deferred by the plan itself)
+`span_select` (§2.1 marks it a stretch goal that may slip past M6) and `show_if`
+conditional inputs (§2.3 marks it v1.1). The widget registry is a
+`Partial<Record<InputType, …>>` so an unregistered type renders a visible
+"Unsupported input" placeholder rather than crashing the task.
+
 ## Planned (later milestones)
+- Move canonicalization server-side; client `value` becomes advisory (M4, §2.6)
 - Reputation weighting + `min_reputation` assignment gating (M4)
 - Dynamic overlap growth on disagreement (M4, §6.4)
+- `sync_scroll` / `diff_highlight` / zoom-lightbox / syntax highlighting (M5, §2.2)
+- Playwright smoke test over the seeded demo (M6)

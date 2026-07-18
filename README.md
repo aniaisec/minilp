@@ -66,11 +66,28 @@ pytest && ruff check .
 # Frontend
 cd frontend
 npm install
-npm run dev
+npm run dev            # dev server (proxies /api → backend)
+npm run test           # vitest: renderer, hotkeys, canonicalization
+npm run build          # typecheck + production build
 
 # Hooks
 pre-commit install
 ```
+
+### Annotation UI (M3)
+
+The annotation view is template-driven: it renders any gallery template's layout,
+display blocks, and inputs, and drives the `next` / `submit` / `skip` loop. Open it
+against a running backend with the project, annotator, and API key in the URL:
+
+```
+http://localhost:5173/?project=<id>&annotator=<id>&key=<api-key>
+```
+
+Every task is completable from the keyboard alone — number/letter/arrow keys judge,
+`Enter` submits (auto-submits when the template has a single required input), `s`
+skips, `g` toggles guidelines, `d` toggles dark mode, `u` undoes the last selection,
+and `?` opens the shortcut overlay. Key badges are drawn on every option.
 
 ## Roadmap
 
@@ -79,7 +96,7 @@ pre-commit install
 | M0 | Scaffold, CI, pre-commit, README | ✅ |
 | M1 | Template engine, data model, gallery seeds, slot pre-generation | ✅ |
 | M2 | Assignment engine (`SKIP LOCKED` leasing, balance under failure) | ✅ |
-| M3 | Annotation UI (template renderer, collapsible guidelines) | ⬜ |
+| M3 | Annotation UI (template renderer, widget registry, hotkey engine, collapsible guidelines) | ✅ |
 | M4 | Quality subsystem (golds, reputation, agreement) | ⬜ |
 | M5 | Analytics + admin (project wizard, template gallery) | ⬜ |
 | M6 | Export, docs, seeded demo | ⬜ |

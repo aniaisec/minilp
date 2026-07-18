@@ -36,3 +36,8 @@ services:
 
 volumes:
   pgdata:
+
+# Note: if `docker compose up` hangs on `npm install` / `pip install` behind a VPN,
+# that's an MTU mismatch — set `"mtu": 1280` in Docker Desktop's Docker Engine
+# config (daemon.json) rather than overriding the network MTU here, so build-time
+# and runtime agree and Compose doesn't churn the network.

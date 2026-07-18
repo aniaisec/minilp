@@ -1,0 +1,301 @@
+/* Design tokens + visual system (§2.2): card surfaces, typographic scale tuned
+   for long reading, light/dark theme, motion limited to instant feedback. */
+
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #d9dee5;
+  --text: #1a1d23;
+  --text-muted: #5b6472;
+  --accent: #2f6df6;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e7effe;
+  --danger: #d1453b;
+  --ok: #1f9d55;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --gap: 16px;
+
+  --content-md: 640px;
+  --content-lg: 880px;
+  --content-xl: 1180px;
+  --content-full: 100%;
+}
+
+[data-theme="dark"] {
+  --bg: #0f1216;
+  --surface: #171b21;
+  --surface-2: #1f242c;
+  --border: #2b323c;
+  --text: #e8ebef;
+  --text-muted: #98a2b3;
+  --accent: #5c8cff;
+  --accent-contrast: #0f1216;
+  --accent-soft: #1c2740;
+  --danger: #f2635a;
+  --ok: #4ec27f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.mlp-app {
+  min-height: 100vh;
+}
+
+.mlp-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--gap);
+}
+
+.mlp-muted {
+  color: var(--text-muted);
+}
+
+/* ---- badges (hotkey hints, §2.4) ---- */
+.mlp-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* ---- options (radio/checkbox/choice_buttons) ---- */
+.mlp-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.08s ease, border-color 0.08s ease;
+}
+.mlp-option:hover {
+  background: var(--surface-2);
+}
+.mlp-option[aria-checked="true"],
+.mlp-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.mlp-option-label {
+  flex: 1;
+}
+
+.mlp-choice-row {
+  display: flex;
+  gap: 10px;
+}
+.mlp-choice-row .mlp-option {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 12px;
+  font-size: 16px;
+}
+
+.mlp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: var(--gap);
+}
+.mlp-field-label {
+  font-weight: 600;
+}
+.mlp-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+textarea.mlp-textarea,
+input.mlp-text {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+}
+
+/* ---- layout arrangements (§2.2) ---- */
+.mlp-annotate {
+  margin: 0 auto;
+  padding: 20px;
+}
+.mlp-layout-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+.mlp-layout-split,
+.mlp-layout-columns {
+  display: grid;
+  gap: var(--gap);
+  align-items: start;
+}
+.mlp-display-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+.mlp-input-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* ---- display blocks ---- */
+.mlp-block img {
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+.mlp-block-image.fit-contain img {
+  object-fit: contain;
+}
+.mlp-block-image.zoomable img {
+  cursor: zoom-in;
+}
+.mlp-panel-group {
+  display: grid;
+  grid-template-columns: repeat(var(--panel-count, 2), 1fr);
+  gap: var(--gap);
+}
+.mlp-panel {
+  min-height: 80px;
+}
+pre.mlp-code {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.mlp-collapsible summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+/* ---- guidelines panel (§11) ---- */
+.mlp-guidelines {
+  border-left: 3px solid var(--accent);
+}
+.mlp-guidelines-body {
+  white-space: pre-wrap;
+}
+
+/* ---- top bar + session stats ---- */
+.mlp-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: var(--gap);
+}
+.mlp-stats {
+  display: flex;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.mlp-actions {
+  display: flex;
+  gap: 8px;
+}
+.mlp-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.mlp-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+.mlp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- hotkey overlay (§2.4) ---- */
+.mlp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 14, 0.72);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.mlp-overlay-card {
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 24px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: auto;
+}
+.mlp-overlay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mlp-progress {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mlp-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}

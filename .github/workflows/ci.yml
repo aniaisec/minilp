@@ -60,3 +60,5 @@ jobs:
         run: npm install
       - name: Typecheck + build
         run: npm run build
+      - name: Test (vitest)
+        run: npm run test
