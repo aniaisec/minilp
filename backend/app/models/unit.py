@@ -1,9 +1,15 @@
 """Unit model (§4) — one labelable item, carrying its JSON payload, priority,
-and optional gold expectation."""
+and optional gold expectation.
 
+``quality``/``escalated_at`` are written by the M4 consensus evaluator (§6.4):
+the former caches the last per-key consensus snapshot (so the unit browser and
+progress view can read it without recomputing), the latter marks a unit routed to
+human review (§7.2 — the queue itself lands in M8)."""
+
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,3 +40,7 @@ class Unit(TimestampMixin, Base):
     is_gold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     gold_expected: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    quality: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    escalated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )

@@ -1,13 +1,23 @@
 // Thin fetch client for the MiniLP API (§5). All requests carry the annotator's
 // API key; dev proxies /api → backend (see vite.config.ts).
 
-import type { LabelOut, Project, SubmitRequest, Task, Template } from "./types";
+import type {
+  AnnotatorReport,
+  LabelOut,
+  Project,
+  SubmitRequest,
+  Task,
+  Template,
+} from "./types";
 
 // The subset the annotation loop needs — lets tests inject a mock (§12 testability).
 export interface TaskClient {
   nextTask(annotator: number, project: number): Promise<Task | null>;
   submit(slotId: number, annotator: number, body: SubmitRequest): Promise<LabelOut>;
   skip(slotId: number, annotator: number): Promise<{ slot_id: number; status: string }>;
+  // Optional so a minimal mock client stays valid; the annotation view degrades
+  // to "no reputation badge" rather than failing when it is absent.
+  annotatorReport?(annotator: number, project?: number): Promise<AnnotatorReport>;
 }
 
 export interface ClientConfig {
@@ -79,6 +89,14 @@ export class MiniLpClient {
       body: JSON.stringify(body),
     });
     return this.parse<LabelOut>(res);
+  }
+
+  async annotatorReport(annotator: number, project?: number): Promise<AnnotatorReport> {
+    const q = project === undefined ? "" : `?project=${project}`;
+    const res = await fetch(`${this.baseUrl}/annotators/${annotator}/report${q}`, {
+      headers: this.headers(),
+    });
+    return this.parse<AnnotatorReport>(res);
   }
 
   async skip(slotId: number, annotator: number): Promise<{ slot_id: number; status: string }> {

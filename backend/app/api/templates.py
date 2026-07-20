@@ -32,6 +32,16 @@ def get_templates(
     return list_templates(db)
 
 
+@router.get("/{template_id:int}", response_model=TemplateOut)
+def get_template(
+    template_id: int, db: Session = Depends(get_db), _user: User = Depends(require_annotator)
+) -> Template:
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    return template
+
+
 @router.post("", response_model=TemplateOut, status_code=201)
 def post_template(
     body: TemplateCreate, db: Session = Depends(get_db), _user: User = Depends(require_admin)

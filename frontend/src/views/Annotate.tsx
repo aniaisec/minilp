@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { TaskClient } from "../api/client";
+import { ApiError, type TaskClient } from "../api/client";
 import type { DisplayBlock, InputField, Task, TemplateSchema } from "../api/types";
 import { GuidelinesPanel } from "../components/GuidelinesPanel";
 import { HotkeyOverlay } from "../components/HotkeyOverlay";
@@ -52,6 +52,10 @@ export function Annotate({
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [guidelinesOpen, setGuidelinesOpen] = useState(true);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  // Quality state (M4, §6). `paused` holds the reason the backend gave; while it
+  // is set the annotator has no queue, so the view stops asking for tasks.
+  const [paused, setPaused] = useState<string | null>(null);
+  const [reputation, setReputation] = useState<number | null>(null);
   const [session, setSession] = useState<SessionState>({
     submitted: 0,
     skipped: 0,
@@ -60,6 +64,9 @@ export function Annotate({
 
   const undoStack = useRef<Answers[]>([]);
   const tasksSeen = useRef(0);
+  // Time on the current task, reported so the backend can raise a speed flag
+  // (§6.2). Reset every time a task is rendered, not when the answer changes.
+  const taskShownAt = useRef<number>(Date.now());
 
   const assignment = useMemo(() => assignHotkeys(schema.inputs), [schema]);
   const positionalVariant = useMemo(
@@ -84,9 +91,18 @@ export function Annotate({
         setDone(false);
         setGuidelinesOpen(tasksSeen.current === 0);
         tasksSeen.current += 1;
+        taskShownAt.current = Date.now();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // 403 from /tasks/next is the quality gate, not a failure: the annotator is
+      // paused or below the project's min_reputation (§6.1, §6.2). Showing them
+      // the reason beats an empty queue that looks like "no work today".
+      if (e instanceof ApiError && e.status === 403) {
+        setPaused(e.message);
+        setTask(null);
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setLoading(false);
     }
@@ -113,12 +129,38 @@ export function Annotate({
       if (!task || !isComplete(schema, raw)) return;
       setError(null);
       try {
+        // `value` is advisory since M4 — the server recanonicalizes — but sending
+        // it keeps the client honest and lets the two be compared.
         const value = canonicalize(schema, raw, positionalVariant);
-        await client.submit(task.slot_id, annotatorId, { raw, value });
+        const label = await client.submit(task.slot_id, annotatorId, {
+          raw,
+          value,
+          latency_ms: Math.max(0, Math.round(Date.now() - taskShownAt.current)),
+        });
         setSession((s) => ({ ...s, submitted: s.submitted + 1 }));
+        const quality = label?.quality;
+        if (quality) {
+          if (quality.reputation !== null) setReputation(quality.reputation);
+          if (quality.paused) {
+            // The backend has already voided their recent work; don't ask for
+            // another task, just tell them and stop.
+            setPaused(
+              quality.labels_voided > 0
+                ? `Your account has been paused for quality review; ${quality.labels_voided} recent labels were returned to the queue.`
+                : "Your account has been paused for quality review.",
+            );
+            setTask(null);
+            return;
+          }
+        }
         await loadNext();
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        if (e instanceof ApiError && e.status === 403) {
+          setPaused(e.message);
+          setTask(null);
+        } else {
+          setError(e instanceof Error ? e.message : String(e));
+        }
       }
     },
     [task, schema, positionalVariant, client, annotatorId, loadNext],
@@ -243,7 +285,7 @@ export function Annotate({
     <div className="mlp-app" data-theme={theme} data-testid="annotate-root">
       <div className="mlp-annotate" style={{ maxWidth }}>
         <div className="mlp-topbar">
-          <SessionStats session={session} />
+          <SessionStats session={session} reputation={reputation} />
           <div className="mlp-actions">
             <button
               type="button"
@@ -314,6 +356,19 @@ export function Annotate({
         {loading ? (
           <div className="mlp-card" data-testid="loading">
             Loading…
+          </div>
+        ) : paused ? (
+          <div
+            className="mlp-card"
+            style={{ borderColor: "var(--danger)" }}
+            data-testid="paused"
+            role="status"
+          >
+            <strong>Paused — no tasks available.</strong>
+            <p className="mlp-muted" data-testid="paused-reason">
+              {paused}
+            </p>
+            <p className="mlp-muted">Contact a project admin to have your access restored.</p>
           </div>
         ) : done ? (
           <div className="mlp-card" data-testid="empty-queue">

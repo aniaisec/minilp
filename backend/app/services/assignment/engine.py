@@ -22,6 +22,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Annotator, Label, Project, Slot, Unit
+from app.services.quality.pipeline import QualityOutcome, on_label_submitted
+from app.services.quality.reputation import compute_reputation
+from app.services.slots.lifecycle import recompute_unit_status, reopen_slot, void_labels
 
 
 class AssignmentError(Exception):
@@ -80,29 +83,40 @@ def _served_counts(db: Session, annotator_id: int, project_id: int) -> tuple[int
 
 # --- unit status transitions ------------------------------------------------
 
+# ``recompute_unit_status`` moved to ``services.slots.lifecycle`` in M4 so the
+# quality subsystem can void labels without importing the assignment engine.
+# Re-exported under the old private name for callers inside this package.
+_recompute_unit_status = recompute_unit_status
 
-def _recompute_unit_status(db: Session, unit_id: int) -> None:
-    """Derive a unit's status from its slots (§4 unit lifecycle).
 
-    ``finalized`` is owned by later milestones (merge/review); this engine only
-    moves a unit between pending → in_progress → labeled based on slot fill.
-    Reads slot statuses as scalar columns (fresh from the DB, not the identity
-    map) so it is not fooled by a stale cached Slot object.
+# --- eligibility gating (§6.2) ----------------------------------------------
+
+
+def check_eligibility(db: Session, annotator: Annotator, project: Project) -> None:
+    """Refuse work to a paused or below-threshold annotator (§6.1, §6.2).
+
+    Raised rather than returning ``None`` so the caller can tell "you are paused"
+    apart from "the queue is empty" — the annotation UI shows a very different
+    screen for each, and silently handing an annotator an empty queue when they
+    have actually been suspended is the kind of thing that wastes an afternoon.
+
+    When the project gates on reputation the score is recomputed live rather than
+    read from the cached column: the cache is only written after a label lands, so
+    a never-scored annotator would sit at the column default of 0.0 and be locked
+    out of a ``min_reputation`` project before submitting anything. The live
+    computation applies the §6.2 prior, which starts them near 1.0.
     """
-    # Lock the unit row so concurrent last-slot fills serialize: whichever writer
-    # acquires the lock second sees the other's committed fill, so the unit is
-    # never left in_progress when all its slots are actually filled.
-    unit = db.get(Unit, unit_id, with_for_update=True)
-    if unit is None or unit.status == "finalized":
+    if annotator.status != "active":
+        reason = annotator.pause_reason or f"annotator is {annotator.status}"
+        raise AssignmentError(reason, status=403)
+    if project.min_reputation <= 0:
         return
-    statuses = list(db.scalars(select(Slot.status).where(Slot.unit_id == unit_id)))
-    active = [s for s in statuses if s != "voided"]
-    if active and all(s == "filled" for s in active):
-        unit.status = "labeled"
-    elif any(s in ("leased", "filled") for s in statuses):
-        unit.status = "in_progress"
-    else:
-        unit.status = "pending"
+    score = compute_reputation(db, annotator.id, project_id=project.id).score
+    if score < project.min_reputation:
+        raise AssignmentError(
+            f"reputation {score:.2f} is below the project minimum {project.min_reputation:.2f}",
+            status=403,
+        )
 
 
 # --- assignment -------------------------------------------------------------
@@ -155,8 +169,10 @@ def next_task(
     project = db.get(Project, project_id)
     if project is None:
         raise AssignmentError(f"project {project_id} not found", status=404)
-    if db.get(Annotator, annotator_id) is None:
+    annotator = db.get(Annotator, annotator_id)
+    if annotator is None:
         raise AssignmentError(f"annotator {annotator_id} not found", status=404)
+    check_eligibility(db, annotator, project)
 
     if sweep:
         sweep_expired_leases(db, now=now)
@@ -197,14 +213,22 @@ def submit_label(
     tokens_out: int | None = None,
     cost_usd: float | None = None,
     cache_hit: bool | None = None,
+    run_quality: bool = True,
 ) -> Label:
     """Record a label for a slot the annotator currently holds (§2.8).
 
     The fill is an atomic ``UPDATE … WHERE status='leased' AND leased_by=:me``: if
     the lease was reclaimed (expired + swept, then taken by someone else) the
     update matches no row and we refuse — so a stale session can never write a
-    second label onto a slot. ``value`` defaults to ``raw`` (equal for
-    variant-free templates); canonicalization is layered on in M3/M4.
+    second label onto a slot.
+
+    ``value`` from the client is advisory: since M4 the quality pipeline
+    recanonicalizes server-side from ``raw`` + the slot's variant (§2.6), then
+    grades golds, updates reputation and evaluates consensus. The resulting
+    ``QualityOutcome`` is attached to the returned label as ``label.quality`` for
+    the API layer; it is deliberately *not* persisted on the label row, because
+    nothing in it belongs to the label itself. ``run_quality=False`` is for
+    fixtures that want a bare insert.
     """
     slot = db.get(Slot, slot_id, with_for_update=True, populate_existing=True)
     if slot is None:
@@ -233,8 +257,11 @@ def submit_label(
     )
     db.add(label)
     db.flush()
-    _recompute_unit_status(db, unit_id)
+    recompute_unit_status(db, unit_id)
     db.flush()
+
+    outcome = on_label_submitted(db, label) if run_quality else QualityOutcome()
+    label.quality = outcome  # transient attribute, read by the API layer
     return label
 
 
@@ -249,11 +276,9 @@ def skip_task(db: Session, slot_id: int, annotator_id: int) -> Slot:
         raise AssignmentError(f"slot {slot_id} not found", status=404)
     if slot.status != "leased" or slot.leased_by != annotator_id:
         raise AssignmentError("slot is not leased by this annotator", status=409)
-    slot.status = "open"
-    slot.leased_by = None
-    slot.lease_expires_at = None
+    reopen_slot(slot)
     db.flush()
-    _recompute_unit_status(db, slot.unit_id)
+    recompute_unit_status(db, slot.unit_id)
     db.flush()
     return slot
 
@@ -275,13 +300,11 @@ def sweep_expired_leases(db: Session, now: datetime | None = None) -> int:
         .execution_options(populate_existing=True)
     ).all()
     for slot in expired:
-        slot.status = "open"
-        slot.leased_by = None
-        slot.lease_expires_at = None
+        reopen_slot(slot)
     if expired:
         db.flush()
         for unit_id in {slot.unit_id for slot in expired}:
-            _recompute_unit_status(db, unit_id)
+            recompute_unit_status(db, unit_id)
         db.flush()
     return len(expired)
 
@@ -299,19 +322,18 @@ def void_unit(db: Session, unit_id: int) -> int:
     labels = db.scalars(
         select(Label).where(Label.unit_id == unit_id, Label.is_valid.is_(True))
     ).all()
-    for label in labels:
-        label.is_valid = False
-    slots = db.scalars(
+    # Also reopen slots that hold no label (leased-but-unsubmitted), which
+    # ``void_labels`` would not see.
+    voided = void_labels(db, labels)
+    stranded = db.scalars(
         select(Slot)
         .where(Slot.unit_id == unit_id, Slot.status.in_(("filled", "leased")))
         .with_for_update()
         .execution_options(populate_existing=True)
     ).all()
-    for slot in slots:
-        slot.status = "open"
-        slot.leased_by = None
-        slot.lease_expires_at = None
+    for slot in stranded:
+        reopen_slot(slot)
     db.flush()
-    _recompute_unit_status(db, unit_id)
+    recompute_unit_status(db, unit_id)
     db.flush()
-    return len(labels)
+    return voided

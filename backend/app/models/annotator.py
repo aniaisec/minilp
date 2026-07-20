@@ -1,7 +1,7 @@
 """Annotator model (§4, principle 2) — humans and model judges are the same
 thing to the system, distinguished by ``kind``."""
 
-from sqlalchemy import CheckConstraint, Float, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -34,3 +34,6 @@ class Annotator(TimestampMixin, Base):
     )
     reputation_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    # Why the annotator was paused (§6.1) — shown in their report and the admin
+    # annotator table, so a pause is explainable rather than mysterious.
+    pause_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

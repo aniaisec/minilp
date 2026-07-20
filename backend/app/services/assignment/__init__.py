@@ -17,6 +17,7 @@ under four invariants:
 
 from app.services.assignment.engine import (
     AssignmentError,
+    check_eligibility,
     lease_expiry,
     next_task,
     should_serve_gold,
@@ -28,6 +29,7 @@ from app.services.assignment.engine import (
 
 __all__ = [
     "AssignmentError",
+    "check_eligibility",
     "lease_expiry",
     "next_task",
     "should_serve_gold",

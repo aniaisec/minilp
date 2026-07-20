@@ -64,10 +64,13 @@ describe("Annotate — keyboard-only submission (zero mouse events)", () => {
     await screen.findByTestId("input-choice");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
-    expect(client.submit).toHaveBeenCalledWith(42, 1, {
-      raw: { choice: "Right" },
-      value: { choice: "B" },
-    });
+    expect(client.submit).toHaveBeenCalledWith(
+      42,
+      1,
+      // objectContaining: the body also carries latency_ms (§6.2 speed flags),
+      // which is a wall-clock value and not worth pinning here.
+      expect.objectContaining({ raw: { choice: "Right" }, value: { choice: "B" } }),
+    );
   });
 
   it("side-by-side canonicalizes Right→A under variant BA", async () => {
@@ -75,10 +78,11 @@ describe("Annotate — keyboard-only submission (zero mouse events)", () => {
     await screen.findByTestId("input-choice");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
-    expect(client.submit).toHaveBeenCalledWith(42, 1, {
-      raw: { choice: "Right" },
-      value: { choice: "A" },
-    });
+    expect(client.submit).toHaveBeenCalledWith(
+      42,
+      1,
+      expect.objectContaining({ raw: { choice: "Right" }, value: { choice: "A" } }),
+    );
   });
 
   it("image-classification auto-submits on digit key", async () => {
@@ -86,10 +90,11 @@ describe("Annotate — keyboard-only submission (zero mouse events)", () => {
     await screen.findByTestId("input-category");
     fireEvent.keyDown(window, { key: "1" });
     await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
-    expect(client.submit).toHaveBeenCalledWith(42, 1, {
-      raw: { category: "cat" },
-      value: { category: "cat" },
-    });
+    expect(client.submit).toHaveBeenCalledWith(
+      42,
+      1,
+      expect.objectContaining({ raw: { category: "cat" }, value: { category: "cat" } }),
+    );
   });
 
   it("multi-input template submits on Enter after keyboard selections", async () => {
@@ -101,10 +106,14 @@ describe("Annotate — keyboard-only submission (zero mouse events)", () => {
     expect(client.submit).not.toHaveBeenCalled(); // no auto-submit with >1 input
     fireEvent.keyDown(window, { key: "Enter" });
     await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
-    expect(client.submit).toHaveBeenCalledWith(42, 1, {
-      raw: { faithfulness: 1, coverage: 1, fluency: 1 },
-      value: { faithfulness: 1, coverage: 1, fluency: 1 },
-    });
+    expect(client.submit).toHaveBeenCalledWith(
+      42,
+      1,
+      expect.objectContaining({
+        raw: { faithfulness: 1, coverage: 1, fluency: 1 },
+        value: { faithfulness: 1, coverage: 1, fluency: 1 },
+      }),
+    );
   });
 });
 

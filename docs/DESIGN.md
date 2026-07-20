@@ -135,6 +135,11 @@ into a backend service (`services/quality/canonical.py`), derive `value` from `r
 (compare-and-warn, or reject on mismatch). The frontend function should then be
 deleted rather than left as a second source of truth.
 
+**RESOLVED in M4.** `services/quality/canonical.py` now recomputes `value` from
+`raw` + `slot.variant` on every submission and stores its own answer; the client's
+`value` is ignored. The frontend function was *kept* rather than deleted — see
+"Client canonicalization kept as a mirror" below.
+
 ### DEVIATION: acceptance covered by jsdom component tests, not Playwright
 M3's acceptance names Playwright for "each gallery template renders and submits
 end-to-end". Shipped instead: `views/Annotate.test.tsx` (Vitest + Testing Library,
@@ -191,9 +196,122 @@ conditional inputs (§2.3 marks it v1.1). The widget registry is a
 `Partial<Record<InputType, …>>` so an unregistered type renders a visible
 "Unsupported input" placeholder rather than crashing the task.
 
+## M4 — Quality subsystem
+
+### Consensus thresholds are compared to two decimal places
+§6.4's own example policy is `min_consensus: 0.67`, which people write meaning
+"2 of 3 agree". Compared strictly, 2/3 = 0.6667 < 0.67 and that policy is
+*unsatisfiable at K=3* — a trap, not a feature. `key_consensus` therefore adds a
+`CONSENSUS_EPSILON` of 0.005 before comparing. The alternative (demand people
+write 0.6666667) optimizes for arithmetic purity at the cost of every user getting
+it wrong once.
+
+### Kappa is only reported over exact categories
+Cohen/Fleiss kappa assumes categorical equivalence classes. `within` (±tolerance)
+and `jaccard` (≥threshold) agreement are **not transitive** — A can agree with B
+and B with C while A and C disagree — so there is no partition to compute marginals
+over. Rather than invent a number, kappa buckets on exact values regardless of the
+key's match rule, and the tolerance shows up where it *is* well-defined: the
+consensus rate, which is computed pairwise against a candidate answer.
+
+For the same reason `key_consensus` doesn't tally votes with a `Counter` for
+non-exact rules; it tries each distinct vote as the candidate and takes the best
+support. That's the honest reading of "how many raters agree with each other"
+under a tolerance.
+
+### Fleiss drops items whose rater count differs from the mode
+The formula assumes a constant n per item. Under dynamic overlap growth (§6.4)
+units legitimately end up with different label counts, so mixing them would bias
+P_e. Dropping the off-mode items is a visible, explainable loss; silently mixing
+them is an invisible, unexplainable bias. `n_items` in the response says how many
+actually contributed.
+
+### Reputation uses a smoothing prior so a new annotator isn't at 0.0
+`annotators.reputation_score` defaults to 0.0, but a raw gold accuracy of "0
+passes out of 0 golds" is undefined, not bad. Composite reputation Laplace-smooths
+gold accuracy (`+2 successes / +2 trials`), so someone with no history scores ~1.0
+and can be admitted to a `min_reputation` project. Correspondingly,
+`check_eligibility` recomputes the score **live** when `min_reputation > 0` rather
+than reading the cached column — the cache is only written after a label lands, so
+gating on it would lock out every annotator before their first submission.
+
+### A gated annotator gets 403, not an empty queue
+`GET /tasks/next` returns 204 for "no work" and now 403 for "you're paused / below
+threshold", with the reason in the detail. Collapsing both into 204 would mean an
+annotator suspended for gold failures spends an afternoon reloading a page that
+says "all caught up". The frontend renders two visibly different screens and stops
+polling on the 403.
+
+### The submit response is blinded
+`POST /tasks/{slot}/submit` returns only `{paused, labels_voided, reputation,
+flags}`. It deliberately omits whether the unit was a gold, whether that gold
+passed, and the unit's consensus block. Any of the three would let an annotator
+identify golds by watching the response (§6.1 requires they be indistinguishable)
+or learn their peers' votes. The full `QualityOutcome` exists in-process and is
+reachable through the reviewer-gated analytics endpoints.
+
+### POSTMORTEM: two bugs only manual testing caught (found 2026-07-20)
+
+Both were found during the first real end-to-end pass of the M4 demo — the first
+time the actual UI hit the actual API — and both were structurally invisible to
+the automated suite. Recorded here because each maps to a known gap that now has
+a deadline.
+
+**1. `GET /projects/{id}` and `GET /templates/{id}` never existed.** The
+annotation view's first two calls on page load, missing since M3. Every project
+URL rendered a "Not Found" card. Not caught because the frontend tests mock the
+API client and the backend tests only exercise routes that exist — nothing in CI
+proves the two halves agree on the contract. This is precisely the risk the M3
+deviation entry accepted when Playwright was deferred; the deferral now has a
+hard boundary: **the e2e smoke test lands in M5, not M6** — M5's wizard adds more
+frontend↔backend contract surface, and a second round of this class of bug is
+not acceptable. (Fix: routes added with a named regression test in
+`test_api.py`; `ProjectOut` also gained `guidelines_md`, which the guidelines
+panel expected and never received.)
+
+**2. The demo seed announced its golds.** `bootstrap_demo.py` wrote "GOLD — the
+expected answer is 'cat'" into unit *payloads* — annotator-visible by design.
+The API blinding (see "The submit response is blinded" above) was correct and
+tested; the seed data defeated it from the other side. Nothing tests seed
+content because seeds aren't code paths. Lesson generalized: **payload content
+is part of the blinding surface.** Golds must be indistinguishable in what the
+annotator *sees*, not just in what the API *returns* — same discipline as model
+names and variant values (§3 "blinded"), and it applies to judge prompts in M7,
+where a payload leak would contaminate every judge label at scale. The M6 demo
+polish should include a "leak review" of all seeded payloads.
+Quality needs to void labels and reopen slots; assignment needs the same on skip
+and lease expiry. Rather than have `services.quality` import the assignment engine
+(or duplicate the logic and drift), `recompute_unit_status` / `reopen_slot` /
+`void_labels` live in the slots package and both import them. The §2.7 invariant —
+a reopened slot keeps its variant — is then enforced in exactly one place, which is
+why a quality pause preserves counterbalancing for free.
+
+### Growth adds a whole variant round at a time
+`grow_overlap` opens *n* slots (one per variant value), not one. Adding a single
+slot to a `panel_order` template would break the K/n invariant that §2.7 and §12
+call non-negotiable, so the growth step is the variant count and
+`max_labels_per_unit` is validated for divisibility at project creation.
+
+### Client canonicalization kept as a mirror, not deleted
+The M3 deviation entry proposed deleting `frontend/src/render/canonical.ts` once
+the backend owned canonicalization. It was kept: the annotation view needs the
+canonical value locally anyway (auto-submit decisions, and eventually optimistic
+UI), and sending it lets the two implementations be diffed. The trust boundary is
+closed by the server *ignoring* the client's value, not by the client not computing
+one. If the two drift, the gallery fixtures used by both test suites are where it
+shows up.
+
+### `units.quality` is a cache, not a source of truth
+The per-key consensus snapshot is denormalized onto the unit so the M5 unit browser
+and progress view can render without recomputing every unit's votes.
+`GET /projects/{id}/consensus` recomputes on the fly for units that predate M4, so
+the cache being absent or stale degrades performance, never correctness.
+
 ## Planned (later milestones)
-- Move canonicalization server-side; client `value` becomes advisory (M4, §2.6)
-- Reputation weighting + `min_reputation` assignment gating (M4)
-- Dynamic overlap growth on disagreement (M4, §6.4)
+- Escalated units are flagged (`units.escalated_at`) but there is no review queue
+  to work them yet — that queue, and `final_labels`, are M8 (§7.2)
+- Judge-vs-human kappa (`?group=cross`) returns empty until M7 enrolls judges
+- Reputation as merge weight (§7.1) — the score exists, nothing consumes it yet
 - `sync_scroll` / `diff_highlight` / zoom-lightbox / syntax highlighting (M5, §2.2)
-- Playwright smoke test over the seeded demo (M6)
+- Playwright smoke test over the seeded demo — **pulled forward to M5** after the
+  missing-routes postmortem (M4 section above)

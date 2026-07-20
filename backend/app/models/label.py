@@ -56,6 +56,10 @@ class Label(Base):
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     cache_hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Gold outcome (§6.1): True/False on a graded gold, NULL on a normal unit.
+    # Denormalized onto the label so rolling gold accuracy is one indexed scan
+    # rather than a re-grade of every historical answer.
+    gold_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     is_valid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

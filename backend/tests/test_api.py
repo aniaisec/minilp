@@ -63,6 +63,26 @@ def test_list_templates_returns_gallery(client) -> None:
     assert "image-classification" in names
 
 
+def test_get_single_template_and_project(client) -> None:
+    """The annotation UI's first two calls on page load (§11). Regression: these
+    routes were missing through M4 — the UI 404'd on every project URL."""
+    tid = client.get("/templates").json()[0]["id"]
+    t = client.get(f"/templates/{tid}")
+    assert t.status_code == 200
+    assert t.json()["id"] == tid
+
+    proj = client.post(
+        "/projects", json={"name": "p", "template_id": tid, "labels_per_unit": 1}
+    ).json()
+    p = client.get(f"/projects/{proj['id']}")
+    assert p.status_code == 200
+    assert p.json()["template_id"] == tid
+    assert "guidelines_md" in p.json()
+
+    assert client.get("/templates/99999").status_code == 404
+    assert client.get("/projects/99999").status_code == 404
+
+
 def test_create_invalid_template_returns_422(client) -> None:
     resp = client.post("/templates", json={"schema": {"name": "x", "inputs": []}})
     assert resp.status_code == 422

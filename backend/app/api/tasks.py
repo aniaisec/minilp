@@ -18,8 +18,25 @@ from app.services.assignment import (
     skip_task,
     submit_label,
 )
+from app.services.quality import QualityOutcome
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+def _blind_quality(outcome: QualityOutcome | None) -> dict | None:
+    """What an annotator may learn about their own submission (§6.1).
+
+    Withheld: whether the unit was a gold and whether they passed it (golds must
+    stay indistinguishable), and the consensus block (their peers' votes).
+    """
+    if outcome is None:
+        return None
+    return {
+        "paused": outcome.paused,
+        "labels_voided": outcome.labels_voided,
+        "reputation": outcome.reputation,
+        "flags": outcome.flags,
+    }
 
 
 def _authorize_annotator(db: Session, user: User, annotator_id: int) -> Annotator:
@@ -68,10 +85,16 @@ def post_submit(
     user: User = Depends(require_annotator),
     db: Session = Depends(get_db),
 ):
-    """Submit a label for a held slot (validated, canonicalized §2.8)."""
+    """Submit a label for a held slot (validated, canonicalized §2.8).
+
+    ``value`` is recomputed server-side by the quality pipeline (§2.6); anything
+    the client sent is advisory. The response echoes a *blinded* quality summary
+    (§6.1): the annotator learns they were paused, but never whether the unit was
+    a gold they got wrong, and never their peers' votes.
+    """
     _authorize_annotator(db, user, annotator)
     try:
-        return submit_label(
+        label = submit_label(
             db,
             slot_id,
             annotator,
@@ -80,9 +103,21 @@ def post_submit(
             confidence=body.confidence,
             reasoning=body.reasoning,
             comment=body.comment,
+            latency_ms=body.latency_ms,
         )
     except AssignmentError as e:
         raise HTTPException(status_code=e.status, detail=str(e)) from e
+
+    outcome: QualityOutcome | None = getattr(label, "quality", None)
+    return LabelOut(
+        id=label.id,
+        slot_id=label.slot_id,
+        unit_id=label.unit_id,
+        annotator_id=label.annotator_id,
+        value=label.value,
+        is_valid=label.is_valid,
+        quality=_blind_quality(outcome),
+    )
 
 
 @router.post("/{slot_id:int}/skip", status_code=200)

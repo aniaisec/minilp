@@ -29,6 +29,16 @@ def post_project(
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
+@router.get("/{project_id:int}", response_model=ProjectOut)
+def get_project(
+    project_id: int, db: Session = Depends(get_db), _user: User = Depends(require_annotator)
+) -> Project:
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    return project
+
+
 @router.post("/{project_id:int}/units:bulk")
 def post_bulk_units(
     project_id: int,

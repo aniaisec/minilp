@@ -1,4 +1,26 @@
 
+# ============================================================================
+# GOTCHA — stale docker containers shadowing local dev servers
+# ============================================================================
+# `docker compose up --build` starts backend + frontend containers on the SAME
+# ports (8000/5173) as local uvicorn / vite. Container images freeze the code
+# at build time — they do NOT see your edits. If a container is still running
+# from an earlier session, your local server can't bind the port and every
+# request silently hits the old code (symptom: new routes 404 with
+# {"detail": "Not Found"} while old routes work fine).
+#
+# For day-to-day dev: run ONLY the db in docker, backend/frontend locally:
+#     docker compose up -d db
+# Before starting local servers, check nothing is squatting on the ports:
+#     docker compose ps                  # only db should be running
+#     # PowerShell:
+#     Get-NetTCPConnection -LocalPort 8000,5173 -State Listen -ErrorAction SilentlyContinue
+# To stop stale containers:  docker compose down   (the pgdata volume survives)
+# To verify which code is serving 8000, list its routes:
+#     (Invoke-WebRequest http://localhost:8000/openapi.json).Content
+# ============================================================================
+
+
 #M0 Testing
 
 # Backend
@@ -31,7 +53,10 @@ ruff check . && ruff format --check .
 # Tests need a real PostgreSQL. Two options:
 #  (a) Point at your own DB:
 #      docker compose up -d db
+#      # First time only — compose creates the `minilp` db, not `minilp_test`:
+#      docker compose exec db psql -U minilp -c "CREATE DATABASE minilp_test;"
 #      export TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test
+#      # PowerShell: $env:TEST_DATABASE_URL = "postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test"
 #  (b) Auto-spawn one in-process (Linux/macOS, Python <= 3.12):
 #      pip install -e ".[dev,localdb]"   # adds pgserver
 # Without either, the DB-backed tests skip cleanly (pure tests still run).
@@ -85,3 +110,251 @@ docker compose exec db psql -U minilp -d minilp -c \
 # 8) Confirm the partial unique index exists (one valid label per annotator per unit)
 docker compose exec db psql -U minilp -d minilp -c \
   "SELECT indexname FROM pg_indexes WHERE indexname='uq_labels_annotator_unit_valid';"
+
+
+#M4 Testing — Quality subsystem (golds, reputation, agreement, consensus)
+#
+# What M4 added: server-side canonicalization, gold grading, the reputation
+# engine (+ pause/void), kappa & entropy analytics, dynamic overlap growth with
+# escalation, and min_reputation assignment gating.
+#
+# ===========================================================================
+# PART A — Automated suite
+# ===========================================================================
+
+cd backend
+pip install -e ".[dev]"
+ruff check . && ruff format --check .
+
+# Tests need a real PostgreSQL (SKIP LOCKED + partial indexes). Either:
+#   (a) docker compose up -d db
+#       # First time only — the test db must be created by hand:
+#       docker compose exec db psql -U minilp -c "CREATE DATABASE minilp_test;"
+#       export TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test
+#       # PowerShell: $env:TEST_DATABASE_URL = "postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test"
+#   (b) pip install -e ".[dev,localdb]"      # Linux/macOS, Python <= 3.12
+pytest -v
+#   -> 139 passed. Without a DB: the 4 pure quality suites still run, DB ones skip.
+#   Seeing unexpected skips? `pytest -rs` prints the reason (unreachable DB,
+#   missing minilp_test database, or unset TEST_DATABASE_URL).
+
+# Just the M4 suites:
+pytest tests/test_quality_matching.py tests/test_quality_agreement.py -v   # pure, no DB
+pytest tests/test_quality_pipeline.py tests/test_quality_api.py -v         # DB-backed
+
+# The three §12 M4 acceptance criteria, by name:
+pytest -v -k "below_threshold_gold_accuracy_pauses"      # pause + void, balance preserved
+pytest -v -k "grows_to_max_then_escalates"               # dynamic overlap growth
+pytest -v -k "hand_computed_fixture"                     # Cohen + Fleiss kappa
+
+# Frontend
+cd ../frontend
+npm install
+npm run test       # 47 tests (adds AnnotateQuality.test.tsx: pause screen, badge, latency)
+npm run build      # tsc -b && vite build
+
+# ===========================================================================
+# PART B — Manual verification, backend (live stack)
+# ===========================================================================
+
+docker compose up -d db
+cd backend
+export MINILP_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp
+alembic upgrade head          # applies b2c1d4e6f8a0 (gold_passed, pause_reason,
+                              #                        units.quality, escalated_at)
+python -m app.bootstrap_demo  # seeds gallery + 4 demo projects, prints keys/URLs
+uvicorn app.main:app --reload # API at http://localhost:8000/docs
+
+# The bootstrap prints:
+#   Admin API key : dev-admin-key
+#   Annotator id  : 1
+# Project 4 ("Demo — Quality") is the M4 playground: 6 gold units expecting
+# "cat", K=2 / max 4, min_consensus 0.9, pause after 3 golds below 70%.
+export KEY=dev-admin-key
+export A=1        # annotator id
+export P=4        # quality demo project
+
+# --- B1) Confirm the migration landed -------------------------------------
+docker compose exec db psql -U minilp -d minilp -c \
+  "\d+ labels" | grep gold_passed
+docker compose exec db psql -U minilp -d minilp -c \
+  "SELECT column_name FROM information_schema.columns \
+   WHERE table_name='units' AND column_name IN ('quality','escalated_at');"
+
+# --- B2) Server-side canonicalization: the client's `value` is ignored -----
+# Lease a task, then submit a deliberately wrong `value`. The response must come
+# back with the value the SERVER computed from `raw`.
+SLOT=$(curl -s -H "Authorization: Bearer $KEY" \
+  "localhost:8000/tasks/next?annotator=$A&project=$P" | python -c \
+  "import sys,json;print(json.load(sys.stdin)['slot_id'])")
+curl -s -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  "localhost:8000/tasks/$SLOT/submit?annotator=$A" \
+  -d '{"raw": {"category": "other:capybara"}, "value": {"category": "LIES"}}' \
+  | python -m json.tool
+#   -> "value": {"category": "capybara"}   (the "other:" prefix stripped, LIES ignored)
+#   -> "quality": {paused, labels_voided, reputation, flags} and NOTHING about
+#      gold pass/fail — golds must stay indistinguishable (§6.1).
+
+# --- B3) Gold accuracy collapse pauses the annotator and voids their work ---
+# Answer every task "dog". Six of the ten units are golds expecting "cat", so by
+# the third graded gold the rolling accuracy is 0/3 and the pause fires.
+for i in $(seq 1 8); do
+  SLOT=$(curl -s -H "Authorization: Bearer $KEY" \
+    "localhost:8000/tasks/next?annotator=$A&project=$P" | python -c \
+    "import sys,json;d=sys.stdin.read();print(json.loads(d)['slot_id'] if d.strip() else '')" 2>/dev/null)
+  [ -z "$SLOT" ] && break
+  curl -s -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+    "localhost:8000/tasks/$SLOT/submit?annotator=$A" -d '{"raw": {"category": "dog"}}' \
+    | python -c "import sys,json;q=json.load(sys.stdin)['quality'];print('paused:',q['paused'],'voided:',q['labels_voided'],'rep:',q['reputation'])"
+done
+#   -> the run ends with paused: True and a non-zero voided count.
+
+# The annotator's report explains why (readable by the annotator themselves):
+curl -s -H "Authorization: Bearer $KEY" localhost:8000/annotators/$A/report \
+  | python -m json.tool
+#   -> "status": "paused", "pause_reason": "gold accuracy 0.00 over last 3 golds...",
+#      "live": {gold_accuracy, peer_agreement, variant_bias, speed_flags},
+#      "events": [{"kind": "gold_fail", ...}, ...]
+
+# Assignment is now refused with 403 + the reason (NOT a silent empty queue):
+curl -s -o /dev/stderr -w '\nHTTP %{http_code}\n' -H "Authorization: Bearer $KEY" \
+  "localhost:8000/tasks/next?annotator=$A&project=$P"
+#   -> HTTP 403, detail: "gold accuracy ... is below threshold ..."
+
+# Their labels are voided but KEPT (audit trail), and the slots reopened with
+# their variant intact — this is the M4 balance guarantee:
+docker compose exec db psql -U minilp -d minilp -c \
+  "SELECT is_valid, count(*) FROM labels GROUP BY 1;"
+docker compose exec db psql -U minilp -d minilp -c \
+  "SELECT status, count(*) FROM slots s JOIN units u ON u.id=s.unit_id \
+   WHERE u.project_id=4 GROUP BY 1;"
+#   -> voided labels are is_valid=false; their slots are back to 'open'.
+
+# Admin lifts the pause (already-voided work stays voided):
+curl -s -X POST -H "Authorization: Bearer $KEY" \
+  "localhost:8000/annotators/$A:resume" | python -m json.tool
+curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H "Authorization: Bearer $KEY" \
+  "localhost:8000/tasks/next?annotator=$A&project=$P"     # -> HTTP 200 again
+
+# --- B4) Dynamic overlap growth then escalation (§6.4) --------------------
+# Needs two annotators disagreeing on the same unit. Create a second one:
+docker compose exec db psql -U minilp -d minilp -c \
+  "INSERT INTO users (email, role, created_at, updated_at) \
+   VALUES ('second@local','annotator',now(),now()) ON CONFLICT DO NOTHING; \
+   INSERT INTO annotators (kind, display_name, user_id, status, reputation_score, \
+                           created_at, updated_at) \
+   SELECT 'human','Second',id,'active',1.0,now(),now() FROM users \
+   WHERE email='second@local';"
+export B=$(docker compose exec -T db psql -U minilp -d minilp -tAc \
+  "SELECT id FROM annotators WHERE display_name='Second';")
+
+# Annotator A says "cat", annotator B says "dog", on the same unit.
+for ANN in $A $B; do
+  ANSWER=$([ "$ANN" = "$A" ] && echo cat || echo dog)
+  SLOT=$(curl -s -H "Authorization: Bearer $KEY" \
+    "localhost:8000/tasks/next?annotator=$ANN&project=$P" | python -c \
+    "import sys,json;print(json.load(sys.stdin)['slot_id'])")
+  curl -s -o /dev/null -X POST -H "Authorization: Bearer $KEY" \
+    -H 'content-type: application/json' \
+    "localhost:8000/tasks/$SLOT/submit?annotator=$ANN" -d "{\"raw\": {\"category\": \"$ANSWER\"}}"
+done
+
+# Per-unit consensus state, including the growth/escalation action:
+curl -s -H "Authorization: Bearer $KEY" "localhost:8000/projects/$P/consensus" \
+  | python -m json.tool
+#   -> a disagreeing unit shows "action": "grown" and gains an extra open slot
+#      (K=2 -> 3 -> 4); at max_labels_per_unit it flips to "action": "escalated"
+#      with escalated_at set.
+
+curl -s -H "Authorization: Bearer $KEY" "localhost:8000/projects/$P/consensus?escalated=true" \
+  | python -c "import sys,json;print('escalated units:', json.load(sys.stdin)['count'])"
+
+docker compose exec db psql -U minilp -d minilp -c \
+  "SELECT id, status, escalated_at IS NOT NULL AS escalated, \
+          quality->>'action' AS action, quality->'failed_keys' AS failed \
+   FROM units WHERE project_id=4 ORDER BY id;"
+
+# --- B5) Agreement analytics: kappa + entropy (§6.3) ----------------------
+curl -s -H "Authorization: Bearer $KEY" \
+  "localhost:8000/projects/$P/analytics/agreement" | python -m json.tool
+#   -> per input key: kappa, observed_agreement, expected_agreement, method
+#      ("cohen" at K=2, "fleiss" above), mean_entropy, units_with_multiple_labels.
+#   Groups: ?group=human | model | cross  (cross is empty until judges land in M7)
+curl -s -H "Authorization: Bearer $KEY" \
+  "localhost:8000/projects/$P/analytics/agreement?group=human" | python -m json.tool
+
+# --- B6) min_reputation gating (§6.2) -------------------------------------
+# Create a project that demands a high score, then verify a fresh annotator is
+# still admitted (the §6.2 prior) while a burned one is not.
+curl -s -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  localhost:8000/projects -d '{"name":"gated","template_id":2,"labels_per_unit":1,
+    "gold_ratio":1.0,"min_reputation":0.8}' | python -m json.tool
+#   -> GET /tasks/next as a brand-new annotator: HTTP 200 (prior keeps them eligible)
+#   -> as the annotator from B3 (poor gold record): HTTP 403 "below the project minimum"
+
+# --- B7) Role gating on the new endpoints ---------------------------------
+#   /annotators/{id}/report  : self (own record) or reviewer/admin
+#   /annotators/{id}:resume  : admin only
+#   /projects/{id}/analytics/*, /projects/{id}/consensus : reviewer or admin
+# With an annotator-role key, resume and analytics must both return 403.
+
+# ===========================================================================
+# PART C — Manual verification, frontend
+# ===========================================================================
+
+cd frontend
+npm install
+npm run dev        # http://localhost:5173  (proxies /api -> localhost:8000)
+
+# Open the quality demo project (ids/keys from bootstrap_demo above):
+#   http://localhost:5173/?project=4&annotator=1&key=dev-admin-key
+
+# C1) Reputation badge
+#   - The top bar shows "Labeled / Skipped / rate". No "Quality:" chip yet.
+#   - Submit one task -> a "Quality: NN%" chip appears (the score the backend
+#     returned with the label). It updates on every submission.
+#   - It is intentionally unstyled by band: the number is a signal, not a grade.
+
+# C2) Paused screen (the important one)
+#   - Keep answering "dog" (press the 2 key) on the quality project.
+#   - After the third failed gold the view swaps to a red-bordered card:
+#         "Paused — no tasks available."
+#     with the backend's reason and "Contact a project admin...".
+#   - Verify in the network tab that the app STOPS calling /tasks/next after the
+#     pause — it must not spin against a 403.
+#   - This is a different screen from "All caught up — no tasks in the queue."
+#     Confirm you can tell them apart at a glance.
+
+# C3) Recovery
+#   - curl the resume endpoint (B3 above), then reload the page.
+#   - Tasks are served again; the reopened slots include the ones voided when
+#     you were paused, so the same units come back around.
+
+# C4) Below-threshold gating (reuses B6's gated project)
+#   - Open ?project=<gated id>&annotator=<burned annotator>&key=dev-admin-key
+#   - The paused card renders immediately on load with
+#     "reputation 0.XX is below the project minimum 0.80" — before any task
+#     is shown, because /tasks/next 403s on the first call.
+
+# C5) Speed flags are recorded, not shown
+#   - Answer a task within ~1s of it appearing (hit the hotkey immediately).
+#   - The UI shows nothing (deliberate — no nagging), but the event is logged:
+#       curl -s -H "Authorization: Bearer $KEY" localhost:8000/annotators/1/report \
+#         | python -c "import sys,json;print(json.load(sys.stdin)['live']['speed_flags'])"
+
+# C6) Golds stay invisible
+#   - Nothing in the UI distinguishes a gold unit from a regular one: no badge,
+#     no different styling, and the submit response carries no gold field.
+#     Confirm in the network tab that the /tasks/next payload has no `is_gold`
+#     and the submit response's `quality` object has only:
+#       paused, labels_voided, reputation, flags
+
+# ===========================================================================
+# PART D — Full stack from scratch
+# ===========================================================================
+# NOTE: this runs backend+frontend from docker images built NOW. When you go
+# back to local dev, `docker compose down` first — see the GOTCHA at the top.
+docker compose up --build -d
+docker compose exec backend alembic upgrade head
+docker compose exec backend python -m app.bootstrap_demo
+# then follow PART B / PART C using the printed URLs.

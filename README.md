@@ -2,7 +2,7 @@
 
 A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — image classification, ratings, policy review, transcription checks, and side-by-side preference judging for RLHF/LLM evaluation — with quality controls built in from the start: gold questions, inter-annotator agreement, rater reputation, and position-bias counterbalancing for comparison tasks.
 
-> **Status:** Milestone 0 (scaffold). See [PLAN.md](PLAN.md) for the full roadmap.
+> **Status:** Milestone 4 (quality subsystem). See [PLAN.md](PLAN.md) for the full roadmap.
 
 ## Why
 
@@ -89,6 +89,45 @@ Every task is completable from the keyboard alone — number/letter/arrow keys j
 skips, `g` toggles guidelines, `d` toggles dark mode, `u` undoes the last selection,
 and `?` opens the shortcut overlay. Key badges are drawn on every option.
 
+### Quality subsystem (M4)
+
+Every label that lands runs the same pipeline, whether a human or a model judge
+submitted it:
+
+1. **Canonicalized server-side** — the browser still computes `value`, but the
+   backend recomputes it from `raw` + the slot's variant and stores its own answer.
+   Gold grading, agreement and merge all read `value`, so a wrong client can't
+   corrupt the quality signal.
+2. **Graded against golds** — per input key, using the project's declared match
+   rules (`exact` / `within` ± tolerance / `jaccard` ≥ threshold). A gold may
+   grade a subset of the template's inputs.
+3. **Scored** — a composite reputation in [0, 1]: rolling gold accuracy
+   (dominant), peer agreement, a variant-bias penalty, and speed flags (humans
+   only). A new annotator starts near 1.0 via a smoothing prior rather than at 0,
+   so `min_reputation` gating doesn't lock out everyone who hasn't seen a gold yet.
+4. **Enforced** — below-threshold gold accuracy pauses the annotator and voids
+   their recent labels. Voided labels are kept as an audit trail; their slots
+   reopen **retaining their variant**, so counterbalancing survives a suspension
+   exactly as it survives a skip or a lease expiry.
+5. **Reconciled** — once a unit has its K labels, per-key consensus is evaluated.
+   Under `grow_then_escalate` a disagreeing unit opens another *balanced* round of
+   slots (n at a time, never breaking K/n) up to `max_labels_per_unit`, then
+   escalates to human review.
+
+Analytics: Cohen's kappa (K=2) / Fleiss' kappa (K>2) per input key, plus per-unit
+vote entropy — computed within humans, within judges, and human-vs-judge.
+
+```
+GET  /annotators/{id}/report                 reputation, gold accuracy, bias, event log
+POST /annotators/{id}:resume                 lift a quality pause (admin)
+GET  /projects/{id}/analytics/agreement      kappa + entropy per key
+GET  /projects/{id}/consensus                per-unit consensus, escalation state
+```
+
+Golds stay invisible throughout: `GET /tasks/next` never exposes `is_gold`, and
+the submit response reports only whether *you* were paused — never whether the
+unit was a gold you got wrong, and never your peers' votes.
+
 ## Roadmap
 
 | Milestone | Scope | Status |
@@ -97,7 +136,7 @@ and `?` opens the shortcut overlay. Key badges are drawn on every option.
 | M1 | Template engine, data model, gallery seeds, slot pre-generation | ✅ |
 | M2 | Assignment engine (`SKIP LOCKED` leasing, balance under failure) | ✅ |
 | M3 | Annotation UI (template renderer, widget registry, hotkey engine, collapsible guidelines) | ✅ |
-| M4 | Quality subsystem (golds, reputation, agreement) | ⬜ |
+| M4 | Quality subsystem (golds, reputation, agreement, consensus growth) | ✅ |
 | M5 | Analytics + admin (project wizard, template gallery) | ⬜ |
 | M6 | Export, docs, seeded demo | ⬜ |
 

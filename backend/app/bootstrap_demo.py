@@ -72,6 +72,53 @@ SIDE_BY_SIDE_UNITS = _jsonl(
 )
 
 
+# --- M4 quality demo (§6) ---------------------------------------------------
+# Half the units are golds expecting "cat", with a deliberately twitchy threshold
+# (70% over a 4-gold window, acting after 3) so a few wrong answers demonstrate
+# the pause-and-void path in under a minute. K=2 with a 0.9 consensus requirement
+# and grow_then_escalate makes the growth/escalation path just as quick to reach.
+# NOTE: gold and regular payloads must be indistinguishable to the annotator
+# (§6.1) — identical context text, same image host. Gold identity lives ONLY in
+# the (server-side) is_gold / gold_expected fields. To find out which demo units
+# are golds, ask the DB as an admin:
+#   SELECT id, is_gold FROM units WHERE project_id = <quality project id>;
+QUALITY_UNITS = "\n".join(
+    json.dumps(row)
+    for row in (
+        [
+            {
+                "payload": {
+                    "image_url": f"https://placekitten.com/{500 + i}/400",
+                    "context": "a sample photo",
+                },
+                "is_gold": True,
+                "gold_expected": {"category": "cat"},
+            }
+            for i in range(6)
+        ]
+        + [
+            {
+                "payload": {
+                    "image_url": f"https://placekitten.com/{400 + i}/300",
+                    "context": "a sample photo",
+                }
+            }
+            for i in range(1, 5)
+        ]
+    )
+)
+
+QUALITY_CONFIG = {
+    "quality": {
+        "gold_threshold": 0.7,
+        "gold_window": 4,
+        "gold_min_samples": 3,
+        "void_lookback": 20,
+        "on_disagreement": "grow_then_escalate",
+    }
+}
+
+
 def _get_or_create_admin(db) -> User:
     user = db.scalar(select(User).where(User.email == ADMIN_EMAIL))
     if user is None:
@@ -108,7 +155,19 @@ def _template(db, name: str) -> Template:
     )
 
 
-def _make_project(db, *, template_name, name, k, guidelines, units_jsonl) -> Project | None:
+def _make_project(
+    db,
+    *,
+    template_name,
+    name,
+    k,
+    guidelines,
+    units_jsonl,
+    gold_ratio=0.0,  # most demo projects keep it simple: no gold injection
+    max_k=None,
+    agreement=None,
+    config=None,
+) -> Project | None:
     if db.scalar(select(Project).where(Project.name == name)) is not None:
         return None  # already created on a previous run
     tmpl = _template(db, template_name)
@@ -119,8 +178,11 @@ def _make_project(db, *, template_name, name, k, guidelines, units_jsonl) -> Pro
         name=name,
         template_id=tmpl.id,
         labels_per_unit=k,
-        gold_ratio=0.0,  # keep the demo simple: no gold injection
+        max_labels_per_unit=max_k,
+        gold_ratio=gold_ratio,
         guidelines_md=guidelines,
+        agreement=agreement,
+        config=config,
     )
     ingest_units(db, project, parse_jsonl(units_jsonl), batch_name="demo")
     return project
@@ -157,6 +219,18 @@ def main() -> None:
                 "guidelines": "Pick the more helpful response. Press **Tie** if they're equal.",
                 "units_jsonl": SIDE_BY_SIDE_UNITS,
             },
+            {
+                "template_name": "image-classification",
+                "name": "Demo — Quality (golds + consensus)",
+                "k": 2,
+                "max_k": 4,
+                "gold_ratio": 0.5,
+                "agreement": {"category": {"match": "exact", "min_consensus": 0.9}},
+                "config": QUALITY_CONFIG,
+                "guidelines": "Half of these are gold questions expecting **cat**. "
+                "Answer three of them wrong and you will be paused (M4, §6.1).",
+                "units_jsonl": QUALITY_UNITS,
+            },
         ):
             p = _make_project(db, **spec)
             if p is not None:
@@ -176,6 +250,11 @@ def main() -> None:
                 f"    http://localhost:5173/?project={p.id}"
                 f"&annotator={annotator.id}&key={ADMIN_API_KEY}\n"
             )
+        print("Quality endpoints (M4) for the annotator above:\n")
+        print(
+            f"  curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+            f"localhost:8000/annotators/{annotator.id}/report\n"
+        )
     finally:
         db.close()
 

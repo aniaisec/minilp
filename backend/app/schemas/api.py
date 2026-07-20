@@ -54,6 +54,7 @@ class ProjectOut(BaseModel):
     labels_per_unit: int
     max_labels_per_unit: int
     gold_ratio: float
+    guidelines_md: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -101,15 +102,39 @@ class SubmitRequest(BaseModel):
     confidence: float | None = None
     reasoning: str | None = None
     comment: str | None = None
+    latency_ms: int | None = Field(
+        default=None,
+        description="Time on task in ms; implausibly fast humans get a speed flag (§6.2).",
+    )
 
 
 class LabelOut(BaseModel):
+    """A stored label plus what the quality pipeline did with it (§6).
+
+    ``quality`` stays blind: it reports whether a gold was *graded*, never whether
+    it passed, so an annotator cannot use the submit response to identify golds
+    (§6.1). Pause and reputation are visible because they are about the annotator,
+    not the unit.
+    """
+
     id: int
     slot_id: int
     unit_id: int
     annotator_id: int
     value: dict[str, Any]
     is_valid: bool
+    quality: dict[str, Any] | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class AnnotatorOut(BaseModel):
+    id: int
+    kind: str
+    display_name: str | None = None
+    status: str
+    reputation_score: float
+    pause_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
