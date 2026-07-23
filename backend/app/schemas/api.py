@@ -13,8 +13,15 @@ class TemplateOut(BaseModel):
     description: str | None = None
     kind: str
     schema_: dict[str, Any] = Field(alias="schema")
+    sample: dict[str, Any] | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class SampleUpdate(BaseModel):
+    """Save an example unit payload for a template (§11 gallery)."""
+
+    sample: dict[str, Any] = Field(description="Example unit payload to persist.")
 
 
 class TemplateCreate(BaseModel):
@@ -59,8 +66,45 @@ class ProjectOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProjectSummary(BaseModel):
+    """Lightweight project row for the admin project list / dashboard (§11)."""
+
+    id: int
+    name: str
+    description: str | None = None
+    template_id: int
+    template_version: int
+    labels_per_unit: int
+    gold_ratio: float
+
+    model_config = {"from_attributes": True}
+
+
+class BatchOut(BaseModel):
+    id: int
+    project_id: int
+    name: str | None = None
+    source_filename: str | None = None
+    unit_count: int
+    rejected_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class ReprioritizeRequest(BaseModel):
+    """Bulk priority update by batch or status filter (§5 units:reprioritize)."""
+
+    priority: int = Field(description="New priority to apply to the matched units.")
+    batch_id: int | None = None
+    status: str | None = None
+
+
 class BulkIngestRequest(BaseModel):
-    jsonl: str = Field(description="Raw JSONL text, one unit object per line.")
+    jsonl: str = Field(
+        description="Raw payload text. Interpreted per `format`: JSONL (one object "
+        "per line), a JSON array, or TSV-with-header."
+    )
+    format: str = Field(default="jsonl", description="jsonl | json | tsv")
     batch_name: str | None = None
     source_filename: str | None = None
 

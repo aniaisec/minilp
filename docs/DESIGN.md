@@ -307,6 +307,44 @@ and progress view can render without recomputing every unit's votes.
 `GET /projects/{id}/consensus` recomputes on the fly for units that predate M4, so
 the cache being absent or stale degrades performance, never correctness.
 
+### POSTMORTEM: a reload stranded the annotator's own task (found 2026-07-23)
+
+Reported from manual use: a freshly created project showed "All caught up" while
+the admin showed the units `in_progress`. Cause: assignment is *pull-based* — the
+annotation view leases a slot on page load (`pending → in_progress`), and the
+annotator-unit exclusion (§2.7) then hides a unit from the annotator who holds it.
+So opening/reloading the page without submitting leased the units to that same
+annotator and then excluded them from their own un-submitted holds; the slots sat
+leased until `lease_minutes` (default 30) expired.
+
+Two things made this invisible to CI:
+
+1. **No test asserted unit status across the lifecycle.** The suite checked
+   `filled → labeled` on submit, but nothing asserted the boring baseline: an
+   uploaded unit is `pending` with `open` slots, and *only* leasing moves it to
+   `in_progress`. A status assertion "after upload" is now
+   `test_fresh_units_are_pending_and_only_leasing_moves_them`.
+
+2. **The old tests actively encoded the buggy behavior as intent.** Two
+   assignment tests leased several slots for one annotator *without submitting*
+   and asserted they got distinct units — i.e. they baked in multi-lease
+   pre-fetch, which is exactly what stranded the task on reload. They passed, so
+   the behavior looked correct.
+
+Fix: `next_task` now **resumes an annotator's existing active lease** (refreshing
+its expiry) before handing out anything new — one open task at a time, so a reload
+returns the in-progress task instead of a dead end. The two tests were rewritten to
+verify the real invariants (never the same unit twice; two annotators may share a
+unit's slots) via submit-between-leases rather than the multi-lease shortcut.
+Lesson, generalized: **test the state a user reads, not just the state a happy-path
+transition produces** — the funnel the admin sees is a first-class output and now
+has coverage.
+
+(Also this session, from the same manual pass: the `allow_other` "Other…" option
+had no click handler — only the `o` hotkey activated it — and single-input
+templates auto-submitted on select with no way to review. Auto-submit is now an
+opt-in toggle, default off; both are covered in `Annotate.test.tsx`.)
+
 ## Planned (later milestones)
 - Escalated units are flagged (`units.escalated_at`) but there is no review queue
   to work them yet — that queue, and `final_labels`, are M8 (§7.2)

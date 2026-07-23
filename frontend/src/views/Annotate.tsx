@@ -32,6 +32,25 @@ export interface AnnotateProps {
    * then the bar tracks session momentum rather than project state.
    */
   sessionGoal?: number;
+  /**
+   * Opt-in auto-submit: when on, a single-required-choice template submits the
+   * instant an option is picked (the pre-M5 default, now a speed optimization the
+   * annotator chooses). Off by default — you select, adjust if needed, then click
+   * Submit (or press Enter). Persisted across sessions in localStorage; the prop
+   * seeds tests and the very first render.
+   */
+  initialAutoSubmit?: boolean;
+}
+
+const AUTO_SUBMIT_KEY = "mlp.autoSubmit";
+
+function readAutoSubmitPref(fallback: boolean): boolean {
+  try {
+    const v = window.localStorage.getItem(AUTO_SUBMIT_KEY);
+    return v === null ? fallback : v === "1";
+  } catch {
+    return fallback;
+  }
 }
 
 type Answers = Record<string, unknown>;
@@ -43,9 +62,13 @@ export function Annotate({
   schema,
   guidelines = "",
   sessionGoal = 25,
+  initialAutoSubmit = false,
 }: AnnotateProps) {
   const [task, setTask] = useState<Task | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
+  const [autoSubmit, setAutoSubmit] = useState<boolean>(() =>
+    readAutoSubmitPref(initialAutoSubmit),
+  );
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,12 +207,27 @@ export function Annotate({
       undoStack.current.push(answers);
       const next = { ...answers, [inputId]: raw };
       setAnswers(next);
-      if (autoId === inputId && !isOtherRaw(raw) && isComplete(schema, next)) {
+      // Auto-submit is opt-in (§ user request): only fire when the annotator has
+      // switched it on. Never on the "Other…" escape hatch — they still need to
+      // type the free-text label first.
+      if (autoSubmit && autoId === inputId && !isOtherRaw(raw) && isComplete(schema, next)) {
         void doSubmit(next);
       }
     },
-    [answers, autoId, schema, doSubmit],
+    [answers, autoSubmit, autoId, schema, doSubmit],
   );
+
+  const toggleAutoSubmit = useCallback(() => {
+    setAutoSubmit((on) => {
+      const nextOn = !on;
+      try {
+        window.localStorage.setItem(AUTO_SUBMIT_KEY, nextOn ? "1" : "0");
+      } catch {
+        /* storage unavailable — keep it session-only */
+      }
+      return nextOn;
+    });
+  }, []);
 
   const undo = useCallback(() => {
     setAnswers((prev) => {
@@ -287,6 +325,18 @@ export function Annotate({
         <div className="mlp-topbar">
           <SessionStats session={session} reputation={reputation} />
           <div className="mlp-actions">
+            <label
+              className="mlp-autosubmit"
+              title="Submit as soon as a single-choice answer is picked"
+              data-testid="toggle-autosubmit"
+            >
+              <input
+                type="checkbox"
+                checked={autoSubmit}
+                onChange={toggleAutoSubmit}
+              />
+              Auto-submit
+            </label>
             <button
               type="button"
               className="mlp-btn"
@@ -381,6 +431,9 @@ export function Annotate({
             answers={answers}
             onChange={handleChange}
             assignment={assignment}
+            canSubmit={complete}
+            onSubmit={() => void doSubmit(answers)}
+            onSkip={() => void doSkip()}
           />
         ) : null}
       </div>
@@ -398,12 +451,18 @@ function TaskBody({
   answers,
   onChange,
   assignment,
+  canSubmit,
+  onSubmit,
+  onSkip,
 }: {
   schema: TemplateSchema;
   task: Task;
   answers: Answers;
   onChange: (id: string, raw: unknown) => void;
   assignment: ReturnType<typeof assignHotkeys>;
+  canSubmit: boolean;
+  onSubmit: () => void;
+  onSkip: () => void;
 }) {
   const layout = schema.layout ?? { arrangement: "stack" };
   const variant = variantString(schema, task.variant);
@@ -428,6 +487,25 @@ function TaskBody({
           assignment={assignment}
         />
       ))}
+      <div className="mlp-rail-actions">
+        <button
+          type="button"
+          className="mlp-btn"
+          onClick={onSkip}
+          data-testid="btn-skip-rail"
+        >
+          Skip (s)
+        </button>
+        <button
+          type="button"
+          className="mlp-btn mlp-btn-primary"
+          onClick={onSubmit}
+          disabled={!canSubmit}
+          data-testid="btn-submit-rail"
+        >
+          Submit ⏎
+        </button>
+      </div>
     </div>
   );
 

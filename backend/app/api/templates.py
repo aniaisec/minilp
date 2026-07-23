@@ -8,6 +8,7 @@ from app.db import get_db
 from app.models import Template, User
 from app.schemas.api import (
     PreviewRequest,
+    SampleUpdate,
     TemplateClone,
     TemplateCreate,
     TemplateOut,
@@ -20,6 +21,7 @@ from app.services.templates.repository import (
     edit_template,
     list_templates,
 )
+from app.services.templates.sample import SampleError, get_sample, save_sample
 from app.services.templates.validation import TemplateValidationError
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -78,6 +80,39 @@ def put_template(
         raise HTTPException(status_code=422, detail={"errors": e.errors}) from e
     except TemplateError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+
+
+@router.get("/{template_id:int}/sample")
+def get_template_sample(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_annotator),
+) -> dict:
+    """The template's saved example payload (or a generated one) + field breakdown.
+
+    Powers the gallery preview and the wizard's format example (§11)."""
+    tmpl = db.get(Template, template_id)
+    if tmpl is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    return get_sample(db, tmpl)
+
+
+@router.put("/{template_id:int}/sample")
+def put_template_sample(
+    template_id: int,
+    body: SampleUpdate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Save an edited example payload (admin). Rejected if it misses a required
+    field; saving never bumps the schema version (§2.5 — this is metadata)."""
+    tmpl = db.get(Template, template_id)
+    if tmpl is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    try:
+        return save_sample(db, tmpl, body.sample)
+    except SampleError as e:
+        raise HTTPException(status_code=422, detail={"errors": e.problems}) from e
 
 
 @router.post("/{template_id:int}/preview")

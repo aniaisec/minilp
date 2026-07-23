@@ -14,6 +14,7 @@ from app.models import Annotator, Unit, User
 from app.schemas.api import LabelOut, SubmitRequest, TaskOut
 from app.services.assignment import (
     AssignmentError,
+    available_work,
     next_task,
     skip_task,
     submit_label,
@@ -49,6 +50,26 @@ def _authorize_annotator(db: Session, user: User, annotator_id: int) -> Annotato
     if annotator.kind == "human" and user.role != "admin" and annotator.user_id != user.id:
         raise HTTPException(status_code=403, detail="cannot act as another annotator")
     return annotator
+
+
+@router.get("/available")
+def get_available(
+    annotator: int = Query(description="Annotator id to list available work for."),
+    user: User = Depends(require_annotator),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Per-project available work for an annotator — the landing page (§11, M5).
+
+    Counts the open slots this annotator is still eligible for in each project
+    (same exclusion the assignment engine applies), so they can pick where to
+    label. Authorized like the other task calls: a human may list only their own
+    work; admins may list anyone's."""
+    _authorize_annotator(db, user, annotator)
+    try:
+        projects = available_work(db, annotator)
+    except AssignmentError as e:
+        raise HTTPException(status_code=e.status, detail=str(e)) from e
+    return {"annotator_id": annotator, "projects": projects}
 
 
 @router.get("/next")
