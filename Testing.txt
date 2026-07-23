@@ -358,3 +358,172 @@ docker compose up --build -d
 docker compose exec backend alembic upgrade head
 docker compose exec backend python -m app.bootstrap_demo
 # then follow PART B / PART C using the printed URLs.
+
+
+#M5 Testing — Analytics + admin (progress, bias, unit browser, wizard)
+# ===========================================================================
+# What M5 adds: progress/bias/distribution analytics endpoints, a project
+# roster, a unit browser + per-unit detail, bulk reprioritize, and a full React
+# admin surface (dashboard, per-project tabs, new-project wizard).
+
+# --- Automated suites ---
+# Backend (needs a real PostgreSQL — see the M1 section for TEST_DATABASE_URL /
+# pgserver options). New M5 files:
+#   tests/test_analytics_stats.py      pure Wilson-CI / ETA / bias-score fixtures
+#   tests/test_analytics_progress.py   progress reconciles exactly with DB state
+#   tests/test_analytics_bias.py       §9 order bias + order-sensitivity fixtures
+#   tests/test_analytics_api.py        endpoints + role gating + wizard end-to-end
+cd backend
+ruff check .
+pytest                                   # whole suite (170 tests) must be green
+pytest tests/test_analytics_progress.py tests/test_analytics_bias.py -v   # M5 only
+#
+# NOTE ON PYTHON: the app targets Python 3.12+. The only 3.11+ feature is
+# `datetime.UTC`; on 3.10 the suite still runs if you shim it (a one-line
+# sitecustomize.py that sets `datetime.UTC = datetime.timezone.utc`). On 3.12+
+# no shim is needed.
+
+# Frontend
+cd frontend
+npm run test        # vitest — includes src/views/admin/format.test.ts (pct/eta/ci)
+npm run build       # tsc -b (strict, noUnusedLocals) + vite build — must pass
+
+# --- Manual verification against a live stack ---
+# Start the db + backend + seed the demo, then the frontend:
+#     docker compose up -d db
+#     cd backend && uvicorn app.main:app --reload
+#     python -m app.bootstrap_demo        # prints project ids + the admin key
+#     cd frontend && npm run dev
+# KEY=dev-admin-key   (admin role — rank-inclusive, so it passes reviewer gates)
+# Pick any project id printed by bootstrap_demo as <PID> below.
+
+# B/E1) Before you can see rich analytics, land some labels. Open the annotation
+#   view for <PID> (the bootstrap output gives a ready URL) and answer several
+#   tasks. For a K>=2 project, drive a second labeler from the API so units
+#   complete and consensus/agreement populate (admin may act as any annotator):
+#     curl -s "localhost:8000/tasks/next?annotator=<A2>&project=<PID>" \
+#          -H "Authorization: Bearer $KEY"
+#     curl -s -X POST "localhost:8000/tasks/<slot>/submit?annotator=<A2>" \
+#          -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+#          -d '{"raw":{"category":"cat"}}'
+
+# E2) Progress reconciles with the DB (the M5 acceptance)
+#     curl -s localhost:8000/projects/<PID>/progress -H "Authorization: Bearer $KEY" | python -m json.tool
+#   - funnel.pending + in_progress + labeled + finalized == funnel.total
+#   - slots.filled == labels_total (every filled slot has exactly one valid label)
+#   - variants.balanced == true and every variants.values[].total is equal
+#     (that equality IS the K/n counterbalancing invariant, §2.7)
+#   - throughput.eta_hours == remaining_slots / labels_per_hour (or null if idle)
+
+# E3) Bias analytics — humans vs judges, with CIs (§9). Best on the seeded
+#   side-by-side project (it has variants):
+#     curl -s localhost:8000/projects/<PID>/analytics/bias -H "Authorization: Bearer $KEY" | python -m json.tool
+#   - humans.prefer_first_rate has estimate + ci_low/ci_high (Wilson, stays in [0,1])
+#   - judges is empty until M7 enrolls model judges (bias_score: null — NOT a
+#     fabricated 0.5)
+#   - order_sensitivity.flip_rate flags units whose canonical winner flips AB<->BA
+
+# E4) Distribution + roster
+#     curl -s localhost:8000/projects/<PID>/analytics/distribution -H "Authorization: Bearer $KEY"
+#     curl -s localhost:8000/projects/<PID>/annotators -H "Authorization: Bearer $KEY"
+#   - distribution.keys.<key>.by_kind splits human vs model answer counts
+#   - annotators[] carries reputation + gold_accuracy + labels_valid/voided
+
+# E5) Unit browser filters compose + detail drawer
+#     curl -s "localhost:8000/projects/<PID>/units?is_gold=true" -H "Authorization: Bearer $KEY"
+#     curl -s "localhost:8000/projects/<PID>/units?status=pending&min_priority=5" -H "Authorization: Bearer $KEY"
+#     curl -s localhost:8000/units/<UID> -H "Authorization: Bearer $KEY" | python -m json.tool
+#   - the drawer payload lists each label with annotator_kind + reputation +
+#     variant (unblinded — this is an auditor view, not the annotator's, §6.1)
+
+# E6) Bulk reprioritize
+#     curl -s -X POST localhost:8000/projects/<PID>/units:reprioritize \
+#          -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+#          -d '{"priority": 50, "batch_id": <BID>}'      # -> {"updated": N, ...}
+
+# E7) Role gating (reuse an annotator key from PART B, e.g. worker-key)
+#   - GET /projects/<PID>/progress|analytics/bias|analytics/distribution|annotators
+#     with an ANNOTATOR token -> 403 (reviewer-gated).
+#   - GET /projects/<PID>/units with the same token -> 200 (list stays readable).
+
+# E8) Annotator landing page (open labels per project)
+#     curl -s "localhost:8000/tasks/available?annotator=1" -H "Authorization: Bearer $KEY" | python -m json.tool
+#   - projects[] ordered most-work-first; available_labels == open slots this
+#     annotator could still be served (units they already labeled are excluded).
+#   - a paused/below-min-reputation annotator still sees the work but with
+#     eligible:false and a blocked_reason.
+#   - Auth: a worker token may list only its OWN annotator id; admin lists anyone.
+
+# --- Annotator landing UI (http://localhost:5173/?annotator=1&key=dev-admin-key) ---
+# G1) Open with an annotator + key but NO project. A table of tasks renders,
+#     projects needing labels at the top, ordered by "Labels needed".
+# G2) Click a row (or its "Label" button) -> the URL gains ?project=<id> and you
+#     drop into the annotation loop for that project. Label a task, then use the
+#     browser back button to return to the landing and watch "Labels needed" and
+#     "Your labels" update on reload.
+# G3) A project with no remaining work shows a disabled "Done"; a project you are
+#     paused on shows its blocked reason instead of a link.
+
+# E9) Template sample + payload formats (§11 gallery / wizard)
+#     curl -s localhost:8000/templates/1/sample -H "Authorization: Bearer $KEY" | python -m json.tool
+#   - returns {sample, fields:{required,optional}, saved:false} generated from the schema.
+#     Save one (admin), then GET again shows saved:true; the schema version is unchanged.
+#       curl -s -X PUT localhost:8000/templates/1/sample -H "Authorization: Bearer $KEY" \
+#         -H 'Content-Type: application/json' \
+#         -d '{"sample": {"image_url": "http://x/kitten.png", "context": "a kitten"}}'
+#   - A sample missing a required field is rejected 422 with the field name.
+#   - TSV upload (header + rows) and JSON-array upload both work via format=:
+#       curl -s -X POST localhost:8000/projects/<PID>/units:bulk -H "Authorization: Bearer $KEY" \
+#         -H 'Content-Type: application/json' \
+#         -d '{"format":"tsv","jsonl":"image_url\tpriority\nhttp://x/1.png\t5"}'
+#     A TSV whose header lacks a required column rejects every row with that field named.
+
+# --- Annotation UX fixes (open any project's annotation view) ---
+# H1) "Other…" now works by mouse: click it -> a text box appears; type a label,
+#     then click Submit. The submitted raw value is "other:<your text>".
+# H2) Submit is explicit: pick a category — it does NOT auto-submit. Change it if
+#     you like, then click "Submit ⏎" (top bar or below the inputs), or press Enter.
+# H3) Auto-submit is opt-in: tick the "Auto-submit" checkbox in the top bar; now a
+#     single-choice pick submits immediately. The choice persists across reloads.
+
+# --- Template gallery (http://localhost:5173/#/admin/templates?key=dev-admin-key) ---
+# I1) Pick a template on the left -> a LIVE, interactive preview renders on the
+#     right (the real annotator view: hotkeys, layout, Other box, Submit).
+# I2) Expand "Sample data", edit the JSON -> the preview updates live. Click
+#     "Save sample". Reopen later (or start the wizard on this template) and the
+#     saved sample is shown.
+
+# --- New-project wizard: sample + file upload ---
+# J1) In the wizard (#/admin/new), pick a template -> step 3 prefills the example
+#     in the selected format and lists the required/optional fields.
+# J2) Switch "File type" between .json and .tsv -> the example reshapes.
+# J3) Either paste data or "Upload a file" (.json/.tsv). If your data is missing a
+#     required field, a warning shows before you submit; on Create, the per-row
+#     validation report lists ingested vs rejected rows with line numbers.
+
+# --- Admin UI walkthrough (http://localhost:5173/#/admin?key=dev-admin-key) ---
+# F1) Dashboard: every project renders as a card (name, K, gold %, template).
+#     Paste the key in the header field if you didn't pass ?key=.
+# F2) Open a project -> Progress tab: status funnel bars, per-batch fill,
+#     per-variant PAIRED bars with a green "balanced" pill, per-key consensus
+#     bars, and the throughput/ETA stat card.
+# F3) Units tab: change Status / Batch / Gold / Min-priority / escalated filters
+#     — they compose. Click "detail" to open the drawer; confirm each label row
+#     shows annotator kind, reputation and variant, and voided labels are struck
+#     through.
+# F4) Bias tab: humans/judges cards show prefer-first with its CI; order
+#     sensitivity shows the flip rate; label distribution renders share bars.
+# F5) Annotators tab: reputation, gold accuracy, and pause state per rater.
+# F6) New project wizard (top-right "+ New project"):
+#     1. pick a gallery template (leave "clone first" checked)
+#     2. name it + optional guidelines
+#     3. paste a few JSONL unit lines, e.g.:
+#          {"payload": {"image_url": "http://x/1.png"}}
+#          {"payload": {"image_url": "http://x/2.png"}, "priority": 5}
+#          {"bad": "row"}
+#        -> after Create, the report shows "Ingested 2, rejected 1" with the bad
+#           row's line number and error.
+#     4. set K (must be divisible by the template's variant count — the form
+#        blocks Create otherwise), gold ratio, min reputation.
+#     On success it jumps to the new project's Progress tab. Label a couple of
+#     its units and reload to watch the funnel move.

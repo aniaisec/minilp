@@ -1,10 +1,20 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TaskClient } from "../api/client";
 import type { Task, TemplateSchema } from "../api/types";
 import { GALLERY, IMAGE_CLASSIFICATION, SIDE_BY_SIDE, SUMMARY_QUALITY, TEXT_SENTIMENT } from "../fixtures/gallery";
 import { Annotate } from "./Annotate";
+
+// Auto-submit persists to localStorage; clear it so each test starts from the
+// documented default (off) regardless of order.
+beforeEach(() => {
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* no storage in this environment */
+  }
+});
 
 function makeTask(payload: Record<string, unknown>, variant?: Record<string, unknown>): Task {
   return { slot_id: 42, unit_id: 7, project_id: 1, payload, variant: variant ?? null };
@@ -29,10 +39,22 @@ function mockClient(task: Task): TaskClient & {
   };
 }
 
-function renderAnnotate(schema: TemplateSchema, task: Task, guidelines = "# Do good work") {
+function renderAnnotate(
+  schema: TemplateSchema,
+  task: Task,
+  guidelines = "# Do good work",
+  opts: { autoSubmit?: boolean } = {},
+) {
   const client = mockClient(task);
   render(
-    <Annotate client={client} annotatorId={1} projectId={1} schema={schema} guidelines={guidelines} />,
+    <Annotate
+      client={client}
+      annotatorId={1}
+      projectId={1}
+      schema={schema}
+      guidelines={guidelines}
+      initialAutoSubmit={opts.autoSubmit ?? false}
+    />,
   );
   return client;
 }
@@ -59,10 +81,13 @@ describe("Annotate — every gallery template renders end-to-end", () => {
 });
 
 describe("Annotate — keyboard-only submission (zero mouse events)", () => {
-  it("side-by-side auto-submits on ArrowRight and canonicalizes under variant AB", async () => {
+  it("side-by-side: pick with ArrowRight, submit with Enter, canonicalizes under AB", async () => {
     const client = renderAnnotate(SIDE_BY_SIDE, makeTask(GALLERY[0].payload, { panel_order: "AB" }));
     await screen.findByTestId("input-choice");
     fireEvent.keyDown(window, { key: "ArrowRight" });
+    // Default is opt-in off: selecting does NOT submit — the annotator can still change it.
+    expect(client.submit).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "Enter" });
     await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
     expect(client.submit).toHaveBeenCalledWith(
       42,
@@ -73,10 +98,11 @@ describe("Annotate — keyboard-only submission (zero mouse events)", () => {
     );
   });
 
-  it("side-by-side canonicalizes Right→A under variant BA", async () => {
+  it("side-by-side canonicalizes Right→A under variant BA (Enter submits)", async () => {
     const client = renderAnnotate(SIDE_BY_SIDE, makeTask(GALLERY[0].payload, { panel_order: "BA" }));
     await screen.findByTestId("input-choice");
     fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "Enter" });
     await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
     expect(client.submit).toHaveBeenCalledWith(
       42,
@@ -85,8 +111,24 @@ describe("Annotate — keyboard-only submission (zero mouse events)", () => {
     );
   });
 
-  it("image-classification auto-submits on digit key", async () => {
+  it("image-classification: digit selects, Enter submits (no auto-submit by default)", async () => {
     const client = renderAnnotate(IMAGE_CLASSIFICATION, makeTask(GALLERY[1].payload));
+    await screen.findByTestId("input-category");
+    fireEvent.keyDown(window, { key: "1" });
+    expect(client.submit).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "Enter" });
+    await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
+    expect(client.submit).toHaveBeenCalledWith(
+      42,
+      1,
+      expect.objectContaining({ raw: { category: "cat" }, value: { category: "cat" } }),
+    );
+  });
+
+  it("auto-submit mode (opt-in) submits a single-choice template on one keystroke", async () => {
+    const client = renderAnnotate(IMAGE_CLASSIFICATION, makeTask(GALLERY[1].payload), undefined, {
+      autoSubmit: true,
+    });
     await screen.findByTestId("input-category");
     fireEvent.keyDown(window, { key: "1" });
     await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
@@ -113,6 +155,29 @@ describe("Annotate — keyboard-only submission (zero mouse events)", () => {
         raw: { faithfulness: 1, coverage: 1, fluency: 1 },
         value: { faithfulness: 1, coverage: 1, fluency: 1 },
       }),
+    );
+  });
+});
+
+describe("Annotate — Other escape hatch (mouse)", () => {
+  it("clicking Other reveals a text box; typing + Submit sends the free-text label", async () => {
+    const client = renderAnnotate(IMAGE_CLASSIFICATION, makeTask(GALLERY[1].payload));
+    await screen.findByTestId("input-category");
+    // Before clicking, no text box is shown (the bug: clicking did nothing).
+    expect(screen.queryByTestId("category-other-text")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("category-other"));
+    const box = await screen.findByTestId("category-other-text");
+    fireEvent.change(box, { target: { value: "capybara" } });
+
+    // No auto-submit on Other even in auto-submit mode; the annotator clicks Submit.
+    expect(client.submit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("btn-submit"));
+    await waitFor(() => expect(client.submit).toHaveBeenCalledTimes(1));
+    expect(client.submit).toHaveBeenCalledWith(
+      42,
+      1,
+      expect.objectContaining({ raw: { category: "other:capybara" } }),
     );
   });
 });
@@ -163,7 +228,8 @@ describe("Annotate — session progress (§11)", () => {
     await screen.findByTestId("input-category");
     const bar = screen.getByTestId("session-progress");
     expect(bar).toHaveAttribute("aria-valuenow", "0");
-    fireEvent.keyDown(window, { key: "1" }); // auto-submits
+    fireEvent.keyDown(window, { key: "1" }); // select
+    fireEvent.keyDown(window, { key: "Enter" }); // submit
     await waitFor(() => expect(bar).toHaveAttribute("aria-valuenow", "1"));
   });
 });

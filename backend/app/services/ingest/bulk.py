@@ -47,9 +47,17 @@ def ingest_report(result: IngestResult) -> dict[str, Any]:
     }
 
 
-def parse_jsonl(text: str) -> list[tuple[int, dict[str, Any] | None, str | None]]:
+ParsedRows = list[tuple[int, dict[str, Any] | None, str | None]]
+
+# Columns in a TSV upload that map to unit metadata rather than payload fields.
+TSV_RESERVED_COLUMNS = ("priority", "is_gold", "gold_expected")
+
+FORMATS = ("jsonl", "json", "tsv")
+
+
+def parse_jsonl(text: str) -> ParsedRows:
     """Parse JSONL into (row_number, obj|None, error|None). Blank lines skipped."""
-    out = []
+    out: ParsedRows = []
     for i, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
@@ -62,6 +70,86 @@ def parse_jsonl(text: str) -> list[tuple[int, dict[str, Any] | None, str | None]
         except json.JSONDecodeError as e:
             out.append((i, None, f"invalid JSON: {e.msg}"))
     return out
+
+
+def parse_json_array(text: str) -> ParsedRows:
+    """Parse a JSON array of unit objects into (row, obj|None, error|None)."""
+    stripped = text.strip()
+    if not stripped:
+        return []
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError as e:
+        return [(1, None, f"invalid JSON: {e.msg}")]
+    if not isinstance(data, list):
+        return [(1, None, "expected a JSON array of unit objects")]
+    out: ParsedRows = []
+    for i, obj in enumerate(data, start=1):
+        if isinstance(obj, dict):
+            out.append((i, obj, None))
+        else:
+            out.append((i, None, "array element is not a JSON object"))
+    return out
+
+
+def _tsv_bool(value: str) -> bool:
+    return value.strip().lower() in ("1", "true", "yes", "y", "t")
+
+
+def parse_tsv(text: str) -> ParsedRows:
+    """Parse TSV-with-header into (row, obj|None, error|None).
+
+    The header names the columns; every column except the reserved metadata ones
+    (``priority``, ``is_gold``, ``gold_expected``) becomes a flat payload field.
+    Metadata columns are typed: ``priority`` → int, ``is_gold`` → bool,
+    ``gold_expected`` → JSON. A row whose column count doesn't match the header is
+    rejected with its line number, so a stray tab is caught rather than silently
+    shifting fields.
+    """
+    numbered = [(i, line) for i, line in enumerate(text.splitlines(), start=1) if line.strip()]
+    if not numbered:
+        return []
+    _, header_line = numbered[0]
+    header = header_line.split("\t")
+    if not header or any(not h.strip() for h in header):
+        return [(numbered[0][0], None, "TSV header has an empty column name")]
+    header = [h.strip() for h in header]
+
+    out: ParsedRows = []
+    for line_no, line in numbered[1:]:
+        cells = line.split("\t")
+        if len(cells) != len(header):
+            out.append((line_no, None, f"expected {len(header)} columns, got {len(cells)}"))
+            continue
+        record = dict(zip(header, cells, strict=True))
+        payload = {k: v for k, v in record.items() if k not in TSV_RESERVED_COLUMNS}
+        obj: dict[str, Any] = {"payload": payload}
+        error = None
+        if "priority" in record and record["priority"].strip():
+            try:
+                obj["priority"] = int(record["priority"])
+            except ValueError:
+                error = f"priority '{record['priority']}' is not an integer"
+        if "is_gold" in record:
+            obj["is_gold"] = _tsv_bool(record["is_gold"])
+        if "gold_expected" in record and record["gold_expected"].strip():
+            try:
+                obj["gold_expected"] = json.loads(record["gold_expected"])
+            except json.JSONDecodeError:
+                error = f"gold_expected is not valid JSON: {record['gold_expected']!r}"
+        out.append((line_no, None, error) if error else (line_no, obj, None))
+    return out
+
+
+def parse_payload_text(text: str, fmt: str) -> ParsedRows:
+    """Dispatch to the parser for ``fmt`` (``jsonl`` | ``json`` | ``tsv``)."""
+    if fmt == "jsonl":
+        return parse_jsonl(text)
+    if fmt == "json":
+        return parse_json_array(text)
+    if fmt == "tsv":
+        return parse_tsv(text)
+    raise ValueError(f"unknown format {fmt!r}; expected one of {FORMATS}")
 
 
 def ingest_units(

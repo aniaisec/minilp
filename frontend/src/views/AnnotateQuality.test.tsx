@@ -2,7 +2,7 @@
 // the pause screen, the reputation badge, and time-on-task reporting.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, type TaskClient } from "../api/client";
 import type { LabelOut, Task } from "../api/types";
@@ -31,6 +31,17 @@ function label(quality: LabelOut["quality"]): LabelOut {
   };
 }
 
+// These tests exercise quality behavior via the fast "one keystroke submits"
+// path, so they opt into auto-submit explicitly; the default is off (§ user
+// request) and covered in Annotate.test.tsx.
+beforeEach(() => {
+  try {
+    window.localStorage.clear();
+  } catch {
+    /* no storage in this environment */
+  }
+});
+
 function renderWith(client: TaskClient) {
   render(
     <Annotate
@@ -39,6 +50,7 @@ function renderWith(client: TaskClient) {
       projectId={1}
       schema={IMAGE_CLASSIFICATION}
       guidelines=""
+      initialAutoSubmit
     />,
   );
 }

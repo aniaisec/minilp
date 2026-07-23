@@ -30,3 +30,8 @@ class Template(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default="custom")
     schema: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Example unit payload for the template gallery / project wizard (M5, §11).
+    # Presentation metadata, not part of the versioned schema — editing it never
+    # bumps the version and is allowed on builtins. NULL means "no saved sample;
+    # generate one from the schema on demand".
+    sample: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { MiniLpClient } from "../api/client";
 import type { Project, Template } from "../api/types";
 import { Annotate } from "./Annotate";
+import { TasksLanding } from "./TasksLanding";
 
 // Reads connection config from the URL (?project=&annotator=&key=), resolves the
 // project's template, then hands the schema to the annotation loop.
@@ -38,14 +39,19 @@ export function AnnotatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg.project, cfg.annotator]);
 
-  if (!cfg.project || !cfg.annotator) {
+  // Annotator known but no project chosen → the landing page of available tasks.
+  if (cfg.annotator && !cfg.project) {
+    return <TasksLanding client={client} annotator={cfg.annotator} apiKey={cfg.key} />;
+  }
+
+  if (!cfg.annotator) {
     return (
       <div className="mlp-annotate" style={{ maxWidth: "var(--content-md)" }}>
         <div className="mlp-card">
           <h2>MiniLP — Annotate</h2>
           <p className="mlp-muted">
-            Open with <code>?project=&lt;id&gt;&amp;annotator=&lt;id&gt;&amp;key=&lt;api-key&gt;</code>
-            to start labeling.
+            Open with <code>?annotator=&lt;id&gt;&amp;key=&lt;api-key&gt;</code> to see your available
+            tasks, or add <code>&amp;project=&lt;id&gt;</code> to jump straight into one.
           </p>
         </div>
       </div>

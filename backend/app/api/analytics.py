@@ -1,5 +1,6 @@
-"""Analytics endpoints (§5). M4 ships the agreement half (§6.3); bias, costs and
-progress arrive with M5/M7.
+"""Analytics endpoints (§5). M4 shipped the agreement half (§6.3); M5 adds
+progress (§11), variant-bias (§9) and label distribution. Judge costs arrive with
+M7.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,10 +10,59 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_reviewer
 from app.db import get_db
 from app.models import Project, Unit, User
+from app.services.analytics import (
+    project_bias,
+    project_distribution,
+    project_progress,
+)
 from app.services.quality import project_agreement
 from app.services.quality.consensus import evaluate_unit
 
 router = APIRouter(prefix="/projects", tags=["analytics"])
+
+
+@router.get("/{project_id:int}/progress")
+def get_progress(
+    project_id: int,
+    window_hours: float = Query(
+        default=24.0, gt=0, description="Trailing window for the throughput/ETA rate."
+    ),
+    _user: User = Depends(require_reviewer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Status funnel, per-batch and per-variant fill, per-key consensus rates,
+    throughput and ETA (§5, §11)."""
+    try:
+        return project_progress(db, project_id, window_hours=window_hours)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/{project_id:int}/analytics/bias")
+def get_bias(
+    project_id: int,
+    _user: User = Depends(require_reviewer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Variant/order-bias metrics with CIs — humans and judges separately (§9)."""
+    try:
+        return project_bias(db, project_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/{project_id:int}/analytics/distribution")
+def get_distribution(
+    project_id: int,
+    _user: User = Depends(require_reviewer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Per-key canonical-answer distribution, overall and by annotator kind (§11)."""
+    try:
+        return project_distribution(db, project_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
 
 _GROUPS = ("all", "human", "model", "cross")
 

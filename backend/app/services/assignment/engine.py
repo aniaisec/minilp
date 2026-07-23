@@ -152,6 +152,101 @@ def _open_slot_query(annotator_id: int, project_id: int, *, is_gold: bool):
     )
 
 
+def _eligible_open_units_subquery(annotator_id: int):
+    """Units this annotator could still be served an open slot on.
+
+    Same exclusion the assignment query applies (§2.7): never a unit they already
+    labeled, never one they currently hold a lease on, never a finalized unit."""
+    labeled_units = select(Label.unit_id).where(
+        Label.annotator_id == annotator_id, Label.is_valid.is_(True)
+    )
+    leased_units = select(Slot.unit_id).where(
+        Slot.leased_by == annotator_id, Slot.status == "leased"
+    )
+    return labeled_units, leased_units
+
+
+def available_work(db: Session, annotator_id: int, *, now: datetime | None = None) -> list[dict]:
+    """Per-project count of open slots this annotator is still eligible for.
+
+    Powers the annotator landing page (M5): the number returned for a project is
+    exactly what ``next_task`` would keep serving — same annotator-unit exclusion,
+    same finalized-unit filter — counting gold and non-gold slots together so a
+    landing total never leaks which units are golds (§6.1). Projects the annotator
+    is blocked from (paused, or below ``min_reputation``) report their remaining
+    work but carry an ``eligible: false`` / ``blocked_reason`` so the UI can show
+    *why* rather than a mysterious empty row.
+
+    Ordered with the most work first, and projects that still need labels ahead of
+    those that don't — the landing page's default sort.
+    """
+    now = now or _utcnow()
+    annotator = db.get(Annotator, annotator_id)
+    if annotator is None:
+        raise AssignmentError(f"annotator {annotator_id} not found", status=404)
+
+    # Reclaim abandoned leases first so counts reflect currently-available work.
+    sweep_expired_leases(db, now=now)
+
+    labeled_units, leased_units = _eligible_open_units_subquery(annotator_id)
+
+    # Eligible open slots per project, and the distinct units behind them.
+    rows = db.execute(
+        select(
+            Unit.project_id,
+            func.count(Slot.id),
+            func.count(func.distinct(Slot.unit_id)),
+        )
+        .select_from(Slot)
+        .join(Unit, Slot.unit_id == Unit.id)
+        .where(
+            Slot.status == "open",
+            Unit.status != "finalized",
+            Unit.id.not_in(labeled_units),
+            Unit.id.not_in(leased_units),
+        )
+        .group_by(Unit.project_id)
+    ).all()
+    open_by_project = {pid: (slots, units) for pid, slots, units in rows}
+
+    # Labels this annotator has already contributed, per project.
+    served_rows = db.execute(
+        select(Unit.project_id, func.count())
+        .select_from(Label)
+        .join(Unit, Label.unit_id == Unit.id)
+        .where(Label.annotator_id == annotator_id, Label.is_valid.is_(True))
+        .group_by(Unit.project_id)
+    ).all()
+    served_by_project = {pid: n for pid, n in served_rows}
+
+    out = []
+    for project in db.scalars(select(Project).order_by(Project.id)):
+        available, open_units = open_by_project.get(project.id, (0, 0))
+        eligible, blocked = True, None
+        try:
+            check_eligibility(db, annotator, project)
+        except AssignmentError as e:
+            eligible, blocked = False, str(e)
+        out.append(
+            {
+                "project_id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "template_id": project.template_id,
+                "template_version": project.template_version,
+                "labels_per_unit": project.labels_per_unit,
+                "available_labels": available,
+                "open_units": open_units,
+                "your_labels": served_by_project.get(project.id, 0),
+                "eligible": eligible,
+                "blocked_reason": blocked,
+            }
+        )
+    # Most work first; projects still needing labels ahead of finished ones.
+    out.sort(key=lambda r: (r["available_labels"] > 0, r["available_labels"]), reverse=True)
+    return out
+
+
 def next_task(
     db: Session,
     annotator_id: int,
@@ -176,6 +271,31 @@ def next_task(
 
     if sweep:
         sweep_expired_leases(db, now=now)
+
+    # Resume an existing hold before handing out anything new. Pull-based
+    # assignment leases a slot the instant the annotation view loads, so a
+    # reload / revisit would otherwise strand that in-progress task: the
+    # annotator-unit exclusion (§2.7) hides a unit they already hold from
+    # themselves, leaving "all caught up" while the slot sits leased until it
+    # expires. Returning the held slot (and refreshing its lease) makes a reload
+    # pick up exactly where they left off, and keeps one annotator to one open
+    # task at a time.
+    held = db.scalar(
+        select(Slot)
+        .join(Unit, Slot.unit_id == Unit.id)
+        .where(
+            Slot.status == "leased",
+            Slot.leased_by == annotator_id,
+            Unit.project_id == project_id,
+        )
+        .order_by(Slot.lease_expires_at.asc().nulls_first(), Slot.id.asc())
+        .limit(1)
+        .with_for_update(skip_locked=True, of=Slot)
+    )
+    if held is not None:
+        held.lease_expires_at = lease_expiry(project.lease_minutes, now)
+        db.flush()
+        return held
 
     served_total, golds_served = _served_counts(db, annotator_id, project_id)
     want_gold = should_serve_gold(served_total, golds_served, project.gold_ratio)

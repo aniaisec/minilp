@@ -299,3 +299,442 @@ pre.mlp-code {
   height: 100%;
   background: var(--accent);
 }
+
+/* ============================================================
+   M5 admin surface (§11): dashboard, progress, unit browser,
+   bias analytics, project wizard. Reuses the card/token system.
+   ============================================================ */
+
+.mlp-admin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.mlp-admin-brand {
+  font-weight: 650;
+  color: var(--text);
+  text-decoration: none;
+}
+.mlp-admin-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mlp-key-input {
+  width: 180px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.mlp-admin-main {
+  padding: 20px;
+  margin: 0 auto;
+  max-width: var(--content-xl);
+}
+
+.mlp-stack-lg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* stat cards */
+.mlp-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.mlp-stat {
+  flex: 1 1 130px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+.mlp-stat-value {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+.mlp-stat-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.mlp-stat-sub {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* bars */
+.mlp-bar {
+  margin: 6px 0;
+}
+.mlp-bar-track {
+  position: relative;
+  height: 16px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mlp-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+.mlp-bar-ghost {
+  background: transparent !important;
+  border: 1px dashed var(--border);
+  z-index: 1;
+}
+.mlp-bar-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.mlp-paired-row {
+  display: grid;
+  grid-template-columns: 48px 1fr 64px;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+.mlp-paired-name {
+  font-weight: 600;
+}
+.mlp-paired-num {
+  font-size: 13px;
+  text-align: right;
+}
+
+/* pills */
+.mlp-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.mlp-pill-ok {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+.mlp-pill-warn {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+.mlp-pill-muted {
+  background: var(--surface-2);
+}
+
+/* tables */
+.mlp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.mlp-table th,
+.mlp-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.mlp-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.mlp-payload-cell {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.mlp-voided {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.mlp-mono {
+  font-family: var(--font-mono);
+}
+
+/* tabs */
+.mlp-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.mlp-tab {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+}
+.mlp-tab-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* filters */
+.mlp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+}
+.mlp-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.mlp-filters select,
+.mlp-filters input {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.mlp-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+}
+
+/* project grid */
+.mlp-project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.mlp-project-card {
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.mlp-project-card:hover {
+  border-color: var(--accent);
+}
+.mlp-project-name {
+  font-weight: 650;
+  font-size: 16px;
+}
+.mlp-project-meta {
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* drawer */
+.mlp-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.4);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+}
+.mlp-drawer {
+  width: min(560px, 92vw);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 18px;
+}
+.mlp-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mlp-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  font-size: 13px;
+}
+.mlp-kv > span:nth-child(odd) {
+  color: var(--text-muted);
+}
+.mlp-pre {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+/* wizard */
+.mlp-block-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mlp-block-label input,
+.mlp-block-label select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+.mlp-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.mlp-report {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.mlp-reject-list {
+  margin: 6px 0 0;
+  color: var(--danger);
+}
+.mlp-error,
+.mlp-error-text {
+  color: var(--danger);
+}
+.mlp-error {
+  border-color: var(--danger);
+}
+.mlp-dist-title {
+  font-weight: 600;
+  margin-top: 10px;
+}
+
+/* ---- annotator landing page (M5, §11) ---- */
+.mlp-landing-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 14px;
+}
+.mlp-landing-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.mlp-landing-row:hover {
+  background: var(--surface-2);
+}
+.mlp-landing-name {
+  font-weight: 600;
+}
+
+/* ---- opt-in auto-submit toggle + input-rail actions (annotation view) ---- */
+.mlp-autosubmit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.mlp-rail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.mlp-option-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ---- admin nav + template gallery (M5) ---- */
+.mlp-admin-nav {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.mlp-admin-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+.mlp-admin-link:hover {
+  color: var(--accent);
+}
+.mlp-gallery {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--gap);
+  align-items: start;
+}
+.mlp-gallery-list {
+  position: sticky;
+  top: 76px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mlp-gallery-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.mlp-gallery-item:hover {
+  background: var(--surface-2);
+}
+.mlp-gallery-item-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.mlp-gallery-name {
+  font-weight: 600;
+}
+.mlp-preview-frame {
+  padding: 12px;
+  background: var(--bg);
+}
+.mlp-preview-frame .mlp-app {
+  min-height: unset;
+}

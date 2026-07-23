@@ -79,20 +79,61 @@ def test_should_serve_gold_deficit_rule() -> None:
 # --- leasing + exclusion ----------------------------------------------------
 
 
+def test_fresh_units_are_pending_and_only_leasing_moves_them(db) -> None:
+    """The lifecycle the admin sees: uploaded units start ``pending`` with ``open``
+    slots; a unit only becomes ``in_progress`` once the assignment engine leases a
+    slot — never merely by existing. (Regression: a viewer leasing a task is what
+    flips the status, and that must be the *only* thing that does.)"""
+    proj = _project(db, "lifecycle", k=1)
+    _ingest_sentiment(db, proj, n_regular=2)
+
+    units = db.scalars(select(Unit).where(Unit.project_id == proj.id)).all()
+    assert {u.status for u in units} == {"pending"}
+    slots = db.scalars(
+        select(Slot).join(Unit, Slot.unit_id == Unit.id).where(Unit.project_id == proj.id)
+    ).all()
+    assert {s.status for s in slots} == {"open"}
+
+    a = _annotator(db, "a@x.com")
+    leased = next_task(db, a.id, proj.id)
+    assert db.get(Unit, leased.unit_id).status == "in_progress"
+    # The other, untouched unit is still pending.
+    all_units = db.scalars(select(Unit).where(Unit.project_id == proj.id))
+    others = [u for u in all_units if u.id != leased.unit_id]
+    assert all(u.status == "pending" for u in others)
+
+
+def test_next_resumes_an_existing_lease_instead_of_stranding_it(db) -> None:
+    """One open task at a time: re-calling ``next_task`` without submitting hands
+    back the slot already held (a reload picks up where you left off) rather than
+    leasing a second and stranding the first (§ assignment resume)."""
+    proj = _project(db, "resume", k=1)
+    _ingest_sentiment(db, proj, n_regular=2)
+    a = _annotator(db, "a@x.com")
+
+    first = next_task(db, a.id, proj.id)
+    assert first is not None
+    again = next_task(db, a.id, proj.id)
+    assert again is not None and again.id == first.id  # resumed, not a new lease
+    assert db.get(Unit, first.unit_id).status == "in_progress"
+
+
 def test_next_excludes_same_unit_for_annotator(db) -> None:
     proj = _project(db, "excl", k=2)
     _ingest_sentiment(db, proj, n_regular=2)
     a = _annotator(db, "a@x.com")
 
     s1 = next_task(db, a.id, proj.id)
+    assert s1 is not None
+    # Resume returns the held slot until it is submitted; then a *different* unit.
+    submit_label(db, s1.id, a.id, raw={"sentiment": "positive"})
     s2 = next_task(db, a.id, proj.id)
-    assert s1 is not None and s2 is not None
-    # Two units exist; the annotator must get two *different* units.
+    assert s2 is not None
     u1 = db.get(Slot, s1.id).unit_id
     u2 = db.get(Slot, s2.id).unit_id
-    assert u1 != u2
-    # No third distinct unit → next returns None (both remaining slots are on
-    # units this annotator already holds).
+    assert u1 != u2  # never the same unit twice (§2.7)
+    # After both units are labeled by this annotator, no eligible slot remains.
+    submit_label(db, s2.id, a.id, raw={"sentiment": "positive"})
     assert next_task(db, a.id, proj.id) is None
 
 
@@ -107,7 +148,10 @@ def test_two_annotators_share_a_units_slots(db) -> None:
     assert sa is not None and sb is not None
     assert sa.id != sb.id  # different slots
     assert sa.unit_id == sb.unit_id  # same unit, both allowed
-    # Neither can take a second slot on that one unit.
+    # a re-calling resumes its own held slot (not b's, not a new one).
+    assert next_task(db, a.id, proj.id).id == sa.id
+    # Once a submits, it is excluded from that unit and there is no other → None.
+    submit_label(db, sa.id, a.id, raw={"sentiment": "positive"})
     assert next_task(db, a.id, proj.id) is None
 
 
