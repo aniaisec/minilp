@@ -43,7 +43,7 @@ def test_parse_json_array_rejects_non_array_and_non_objects():
 
 
 def test_parse_tsv_header_maps_columns_to_payload():
-    text = "image_url\tcontext\tpriority\n" "http://x/1.png\ta cat\t5\n" "http://x/2.png\t\t0"
+    text = "image_url\tcontext\tpriority\nhttp://x/1.png\ta cat\t5\nhttp://x/2.png\t\t0"
     rows = parse_tsv(text)
     assert len(rows) == 2
     (_, obj1, err1), (_, obj2, _) = rows
@@ -55,7 +55,7 @@ def test_parse_tsv_header_maps_columns_to_payload():
 
 
 def test_parse_tsv_rejects_wrong_column_count_and_bad_types():
-    text = "image_url\tpriority\n" "http://x/1.png\tnot-an-int\n" "too\tmany\tcols"
+    text = "image_url\tpriority\nhttp://x/1.png\tnot-an-int\ntoo\tmany\tcols"
     rows = parse_tsv(text)
     errs = {r[0]: r[2] for r in rows}
     assert "not an integer" in errs[2]
@@ -63,7 +63,7 @@ def test_parse_tsv_rejects_wrong_column_count_and_bad_types():
 
 
 def test_parse_tsv_is_gold_and_gold_expected():
-    text = "image_url\tis_gold\tgold_expected\n" 'http://x/1.png\ttrue\t{"category": "cat"}'
+    text = 'image_url\tis_gold\tgold_expected\nhttp://x/1.png\ttrue\t{"category": "cat"}'
     (_, obj, err) = parse_tsv(text)[0]
     assert err is None
     assert obj["is_gold"] is True
