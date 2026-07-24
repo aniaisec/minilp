@@ -71,6 +71,8 @@ A template is a versioned JSON document:
 
 **Input field types (v1):** `radio` (with `allow_other`), `checkbox` (multi-select, with `allow_other`), `likert` (labeled scale), `free_text`, `choice_buttons` (large keyboard-mapped buttons, e.g. Left/Tie/Right), `span_select` (highlight spans in a text block — stretch goal, may slip past M6).
 
+**Input field types added with the M6 builder:** `number` (min/max/step), `select` / `multiselect` (dropdowns for long option lists where radio/checkbox would sprawl), `boolean` (yes/no toggle), `rating` (stars, a `likert` skin), `slider` (continuous scale with a stored numeric value), `tags` (free-form label entry, canonicalized to a string array), `ranking` (drag to order N options; value is the ordered array), `date` / `datetime`. Richer media-annotation types — `image_region` (bounding boxes / polygons over an `image` block) and `audio_segment` (time ranges over an `audio` block) — are on the same track but may land incrementally; each is a value shape (§2.3) plus a widget (§2.6), so the palette grows without touching assignment, golds, agreement, or export.
+
 `$unit.<key>` resolves against the unit's JSON payload at render time. Template + payload validation happens at upload: every unit is checked against the template's required sources before it enters the pool.
 
 **Templates render for judges too:** each display/input type has a text serialization (images pass as URLs/attachments to multimodal judges), so a judge prompt is assembled mechanically from guidelines + serialized template + unit payload + answer-format instructions. One template drives both the human UI and the judge prompt.
@@ -111,7 +113,8 @@ Every interactive element is reachable from the keyboard — numbers and letters
 The intended workflow is **clone → tweak → go**, not blank-page authoring:
 
 - **Clone anything:** every gallery or custom template has a one-click *Use as starting point* (`POST /templates/{id}:clone`) producing an editable draft — built-ins are immutable, so cloning is also how you "edit" one.
-- **Edit with live preview:** the template editor shows a validated JSON editor (schema-aware autocomplete for block/input/render types) beside a live preview rendering a sample unit — every change re-renders instantly, including layout, hotkey badges, and the `?` overlay. A visual (no-code) builder stays post-v1; the JSON editor with preview is the v1 bar for the ML-savvy audience.
+- **Edit with live preview:** the template editor shows a validated JSON editor (schema-aware autocomplete for block/input/render types) beside a live preview rendering a sample unit — every change re-renders instantly, including layout, hotkey badges, and the `?` overlay. The M3–M5 bar was this JSON-editor-plus-preview; the **visual (no-code) builder is pulled forward into M6** (§11) — a field palette dragged onto the canvas, drag-and-drop reordering of display blocks and inputs, per-field option/hotkey editing — writing the exact same schema the JSON editor does, so the two are interchangeable views of one document.
+- **One editor, three entry points:** *create a template from scratch*, *edit an existing template*, and *edit a project's configuration after it was created from a template* are the same editor. A project pins a template version (§2.1) plus its own config (guidelines, overlap K, agreement policy, gold ratio, thresholds); the editor exposes the template schema and that project config together, so "change the guidelines / bump K / retype an input" is one surface, not three. Editing a template through it follows the versioning rules below; editing a project's config edits the project row, and a schema-affecting change offered there clones-and-rebinds the template rather than mutating a version other projects share.
 - **Versioning:** presentation-only edits (layout, render options, hotkeys) update in place; schema-affecting edits (inputs added/removed/retyped, options changed, variants) bump the version. Units and labels pin the version they were collected under, so a running project is never silently re-shaped.
 - **Draft → publish:** drafts are only attachable to projects once validation passes (payload refs resolve, hotkeys conflict-free, variant divisibility holds).
 
@@ -246,9 +249,12 @@ PUT    /templates/{id}                     edit draft/custom (schema changes bum
 POST   /templates/{id}/preview             render-check a sample unit payload
 POST   /projects                           create project (template, guidelines, overlap,
                                            agreement policy, pipeline)
-POST   /projects/{id}/units:bulk           bulk-load units (JSONL: payload, priority,
-                                           gold fields) → creates a batch, returns
-                                           per-row validation report
+PATCH  /projects/{id}                       edit project config (guidelines, K, agreement,
+                                           gold ratio, thresholds); schema-affecting template
+                                           changes clone-and-rebind rather than mutate (§2.5, M6)
+POST   /projects/{id}/units:bulk           bulk-load / append units (JSON | TSV | JSONL:
+                                           payload, priority, gold fields) → creates a batch,
+                                           returns per-row validation report (the "add tasks" path)
 POST   /projects/{id}/pairs:generate       side-by-side helper: build units from items
 GET    /projects/{id}/units                browse/filter units (status, batch, priority,
                                            agreement, gold) + per-unit label detail
@@ -287,6 +293,7 @@ Auth: API-key per `user`, role-gated (`admin` / `reviewer` / `annotator`) — `a
 
 ### 6.1 Gold questions
 - Golds are units with `gold_expected` (canonical answer, per input id; may grade a subset of inputs), injected at `gold_ratio` (default 10%), indistinguishable in the UI *and in judge prompts*, variant-balanced like everything else.
+- **Presence-driven (confirmed behavior):** marking a unit `is_gold: true` at upload (with `gold_expected`) is all it takes — it automatically becomes a gold that measures the annotator. The assignment engine injects a gold when the deficit rule (`⌊(served+1)·gold_ratio⌋`) says one is due *and* a gold slot is available, and it will serve one as a fallback when the preferred pool is empty; otherwise it just hands out the next regular task. So: **a gold present → it is served and measured; no gold available → collection continues uninterrupted.** A gold `is_gold` with no `gold_expected` is rejected at ingest (there is nothing to measure against). `gold_ratio: 0` means "don't inject golds by ratio" (they can still be served as fallback); `gold_ratio: 1` serves golds as often as the deficit allows.
 - Rolling gold accuracy per annotator; below-threshold pauses assignment and voids recent labels (slots reopen, balance preserved). For judges this catches prompt regressions and provider model drift automatically.
 
 ### 6.2 Reputation = calibration
@@ -379,8 +386,9 @@ No new trigger logic — webhooks fire off checks that already exist in §6–§
 - **Annotation view:** template-driven renderer honoring the template's layout/render options (§2.2), hotkey engine with badges + `?` overlay (§2.4), **collapsible guidelines panel** (expanded on first task, `g` toggles), progress bar, skip, session stats, light/dark theme. Never shows model names, variant values, or A/B identity. Visual bar: modern card-based surfaces and crisp type — but every interaction is instant; throughput beats decoration.
 - **Review queue (M8):** escalated units with merged proposal, per-judge votes + reasoning traces, one-key approve/override — throughput-optimized like the annotation view.
 - **Widget registry:** one React component per display/input type, each declaring its hotkey behavior and render options — the frontend half of the extensibility contract (§2.6).
-- **Template editor:** clone-from-gallery or from-scratch; validated JSON editor with autocomplete beside a live preview (layout, hotkeys, overlay all live) — §2.5.
-- **Admin — new project wizard:** pick/clone template → guidelines editor (markdown + preview) → unit upload (JSONL drop, per-row validation report, batch naming, priority column) → overlap K / agreement policy / gold ratio / thresholds → pipeline editor (M8).
+- **Template editor / builder (M6):** clone-from-gallery *or from scratch*. Two synced views of one schema — a validated JSON editor with autocomplete, and a **visual builder**: a palette of display blocks and input fields (§2.1) dragged onto the canvas, **drag-and-drop reordering** of blocks and inputs, and inline editing of each field's label / options / `allow_other` / `required` / hotkeys and each block's render options — all beside the live preview (layout, hotkeys, overlay live). The builder emits the same document the JSON editor validates, so switching views never loses work. **One editor, reused** for creating a template, editing a template (versioning per §2.5), and editing a project's configuration after creation (§2.5 "one editor, three entry points").
+- **Admin — new project wizard:** pick/clone/**build** template → guidelines editor (markdown + preview) → unit upload (JSON/TSV file or paste, per-row validation report, batch naming, priority column) → overlap K / agreement policy / gold ratio / thresholds → pipeline editor (M8).
+- **Admin — edit an existing project (M6):** reopen the same editor to adjust config (guidelines, K, agreement, gold ratio, thresholds) and, via clone-and-rebind, the template; **"add tasks"** appends units to a live project through the same upload surface (JSON/TSV/paste, §5 `units:bulk`), so a project grows without recreating it. Golds in an appended batch (`is_gold` + `gold_expected`) enter measurement immediately (§6.1).
 - **Progress view (per project):** status funnel (pending → in progress → labeled → finalized); per-batch progress bars; per-variant fill (paired bars — visual proof of counterbalancing); per-key consensus rates with drill-down to disagreeing units; throughput and ETA; unit browser (filter by status/batch/priority/agreement/gold) opening a per-unit detail drawer: payload preview, each label with annotator kind + reputation + variant, agreement state, escalation history.
 - **Admin dashboard:** progress summary across projects, agreement and bias charts (split human/judge), judge cost panel, annotator table with reputation, AL iteration curves (M9).
 
@@ -418,7 +426,16 @@ No new trigger logic — webhooks fire off checks that already exist in §6–§
 *Deliverables:* progress endpoint (funnel, per-batch, per-variant, per-key consensus, throughput/ETA); progress view + unit browser + per-unit detail drawer (§11); §9 bias metrics with CIs; agreement/label-distribution analytics; admin dashboard; new-project wizard (clone/scratch template step, guidelines, upload with validation report, overlap/agreement/gold config).
 *Acceptance:* progress numbers reconcile exactly with DB state under a seeded scenario (counts, consensus rates, ETA formula); unit browser filters compose; wizard creates a working project end-to-end from a JSONL fixture.
 
-**M6 — Export, docs, demo (human-MVP release):** JSONL exports (§10), `docs/DESIGN.md` decision log, `docs/extending.md`, seeded demo (two sample projects: side-by-side + image classification), README GIF. *Acceptance: `docker compose up` → annotate the demo in <2 min; export re-imports cleanly.*
+**M6 — Authoring + export, docs, demo (human-MVP release).**
+*Deliverables:*
+- **Template builder (visual, §2.5/§11):** create a template from scratch or from a clone; a palette of display blocks and input fields dragged onto the canvas; **drag-and-drop reordering** of blocks and inputs; inline editing of per-field label/options/`allow_other`/`required`/hotkeys and per-block render options; live preview and the same validation the JSON editor runs. The builder writes the canonical template schema (§2.1) — it is a second view, not a second format.
+- **Expanded field palette (§2.1):** `number`, `select`/`multiselect`, `boolean`, `rating`, `slider`, `tags`, `ranking`, `date`/`datetime` land through the extensibility contract (§2.6); `image_region` / `audio_segment` may land incrementally.
+- **One editor, three entry points (§2.5):** the same editor creates a template, edits a template (versioning rules apply), and edits a project's config after creation. `PATCH /projects/{id}` for config; a schema-affecting change from the project view clones-and-rebinds the template.
+- **Add tasks to a live project:** the M5 upload surface (JSON/TSV/paste, per-row validation report) available on an existing project via `units:bulk`, appending a batch without recreating the project.
+- **`is_gold` confirmed & documented:** a unit uploaded with `is_gold: true` (and `gold_expected`) automatically becomes a gold — injected at the project's `gold_ratio` and served in balance when a gold slot is available, otherwise normal collection proceeds; graded on submit, feeding rolling gold accuracy and reputation (§6.1/§6.2). Golds stay indistinguishable in the UI. This already holds in M1–M4; M6 adds a builder/UI affordance for marking golds and a regression test pinning "present → served & measured; absent → uninterrupted collection."
+- **Export + docs + demo:** JSONL exports (§10), `docs/extending.md`, seeded demo (side-by-side + image classification), README GIF.
+
+*Acceptance:* build a working template from scratch in the visual builder and create a project on it end-to-end; edit that project's guidelines/K and add a second batch of tasks (including a gold) with the same editor/upload; `docker compose up` → annotate the demo in <2 min; a planted gold is served and moves gold accuracy while a gold-free project collects uninterrupted; export re-imports cleanly.
 
 **M7 — Judge orchestrator:** provider abstraction (Anthropic, OpenAI, OpenAI-compatible/local endpoints), judge configs + versioned prompts, prompt assembly from templates, confidence/reasoning capture, retries/rate limits/budget caps/caching/dry-run, judges enrolled as annotators through the standard assignment loop, `budget.cap_reached` / `gold.accuracy_dropped` webhook events (§7.3). *Tests: a mock-provider judge fills slots respecting balance and golds; cache prevents duplicate spend; budget cap hard-stops and fires its webhook.*
 
@@ -457,7 +474,8 @@ MiniLP/
 
 **v1 (M6, human MVP):**
 - `docker compose up` → working demo (two template types) in under 2 minutes
-- CI green: unit + the concurrency/balance test suite
+- **Author a template from scratch in the visual builder, create a project on it, edit that project and add a batch of tasks (with a gold) — all without touching JSON or the API**
+- CI green: unit + the concurrency/balance test suite + the `is_gold` present/absent regression
 - README: problem statement, architecture diagram, GIF, bias-analytics screenshot
 - `DESIGN.md` explaining *why* — template engine, counterbalancing, leasing
 

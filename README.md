@@ -227,7 +227,7 @@ green in CI before the next starts.
 | M3 | Annotation UI (template renderer, widget registry, hotkey engine, collapsible guidelines) | ✅ Done |
 | M4 | Quality subsystem (golds, reputation, agreement, consensus growth) | ✅ Done |
 | M5 | Analytics + admin (progress, bias analytics, unit browser, template gallery, project wizard, annotator landing) | ✅ Done |
-| M6 | Export (JSONL formats), `docs/extending.md`, seeded demo, README GIF | ⬜ Not started |
+| M6 | Authoring (visual template builder — drag-and-drop fields, expanded palette; one editor for template create/edit + project edit; add tasks to a live project) + export (JSONL), `docs/extending.md`, seeded demo, README GIF | ⬜ Not started |
 | M7 | Judge orchestrator (provider abstraction, judge configs, prompts, budget caps, webhooks) | ⬜ Not started |
 | M8 | Ensembles + routing (calibration-weighted merge, pipeline stages, review queue UI, `final_labels`) | ⬜ Not started |
 | M9 | Active-learning loop (informativeness ranking, batch selection, FT-ready exports, iteration dashboard) | ⬜ Not started |
