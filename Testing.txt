@@ -615,9 +615,15 @@ cd frontend && npm run dev
 #      - Ranking: 3–4 options
 # 6. REORDER: drag a row onto another; or click the ↑/↓ buttons; or focus a row
 #    (Tab to it) and press Alt+↑ / Alt+↓. All three must move it.
-# 7. Watch the LIVE PREVIEW below the canvas the whole time — it is the real
-#    annotation renderer. Press `?` inside it: every keyed option shows a badge.
-#    Rating gets 1..5; Dropdown and Ranking get NO keys (by design, §2.4).
+# 7. Watch the LIVE PREVIEW in the RIGHT-HAND COLUMN the whole time — it is the
+#    real annotation renderer, and it sticks as you scroll the canvas. Press `?`
+#    inside it: every keyed option shows a badge. Rating gets 1..5; Dropdown and
+#    Ranking get NO keys (by design, §2.4).
+#    LAYOUT CHECK: drag the browser window narrower. Below ~1280px the preview
+#    moves to the BOTTOM, full width, and the editor's own columns collapse
+#    (3 -> palette + stacked canvas/inspector -> fully stacked) as its column
+#    narrows. Widen it again and everything returns. No reload, no scrollbars
+#    on the page body.
 # 8. Click "JSON" in the view toggle -> your document is there, exactly. Edit a
 #    label in the JSON, click "Builder" -> the change is on the canvas. Two views,
 #    one document — nothing is lost either way.

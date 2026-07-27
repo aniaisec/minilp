@@ -234,9 +234,12 @@ http://localhost:5173/?project=<id>&annotator=<id>&key=<key>  # straight into on
 blocks and input fields you drag onto a canvas, reorder by dragging (or with
 Alt+↑/↓ on a focused row — the builder is keyboard-drivable like everything else),
 and edit inline: label, options, `allow_other`, `required`, per-option hotkeys,
-per-block render options. Beside it runs the **real annotation renderer** on a
-generated sample, so layout, key badges and the `?` overlay are what an annotator
-will actually get.
+per-block render options. In the **right-hand column** runs the **real annotation
+renderer** on a generated sample — it sticks as you scroll, so the thing you are
+building stays on screen the whole time you build it. Narrow the window and the
+preview moves below the editor; the rule is pure CSS (a media query for the split,
+a container query for the editor's own columns), so there is nothing to resize by
+hand and no state to get out of step with the window.
 
 The builder and the JSON editor are **two views of one document**, not two
 formats — switching between them never loses work, because the JSON view is a

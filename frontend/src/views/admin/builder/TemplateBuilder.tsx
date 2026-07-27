@@ -218,136 +218,153 @@ export function TemplateBuilder({
         </div>
       )}
 
-      {view === "json" ? (
-        <div className="mlp-card">
-          <p className="mlp-muted" style={{ marginTop: 0 }}>
-            The same document the builder edits. Switch back and your changes are
-            there — these are two views, not two formats (§2.5).
-          </p>
-          <textarea
-            className="mlp-textarea mlp-mono"
-            rows={26}
-            value={jsonText}
-            data-testid="builder-json"
-            onChange={(e) => applyJson(e.target.value)}
-          />
-        </div>
-      ) : (
-        <div className="mlp-builder">
-          <aside className="mlp-card mlp-palette">
-            <h4>Display blocks</h4>
-            {DISPLAY_PALETTE.map((entry) => (
-              <PaletteButton key={entry.type} {...entry} onAdd={addDisplay} />
-            ))}
-            <h4>Input fields</h4>
-            {INPUT_PALETTE.map((entry) => (
-              <PaletteButton key={entry.type} {...entry} onAdd={addInput} />
-            ))}
-          </aside>
-
-          <section className="mlp-card">
-            <h3 style={{ marginTop: 0 }}>Canvas</h3>
-            <button
-              type="button"
-              className="mlp-btn mlp-btn-tiny"
-              data-testid="select-layout"
-              onClick={() => setSelection({ kind: "layout" })}
-            >
-              Template & layout settings
-            </button>
-
-            <h4 className="mlp-muted" style={{ marginBottom: 4 }}>
-              What the annotator sees
-            </h4>
-            <Canvas
-              testId="canvas-display"
-              items={display.map((block, i) => ({
-                key: `d${i}:${block.type}`,
-                title: block.sources ? block.sources.join(" · ") : (block.source ?? "(no source)"),
-                type: block.type,
-              }))}
-              selected={selection?.kind === "display" ? selection.index : null}
-              emptyHint="Drag a display block here (or click one in the palette)."
-              onSelect={(index) => setSelection({ kind: "display", index })}
-              onReorder={(from, to) => reorder("display", from, to)}
-              onDropNew={addDisplay}
-              onRemove={(index) => remove("display", index)}
-            />
-
-            <h4 className="mlp-muted" style={{ marginBottom: 4 }}>
-              What they answer
-            </h4>
-            <Canvas
-              testId="canvas-inputs"
-              items={inputs.map((field, i) => ({
-                key: `i${i}:${field.id}`,
-                title: `${field.label || field.id}${field.required ? " *" : ""}`,
-                type: field.type,
-              }))}
-              selected={selection?.kind === "input" ? selection.index : null}
-              emptyHint="Drag an input field here (or click one in the palette)."
-              onSelect={(index) => setSelection({ kind: "input", index })}
-              onReorder={(from, to) => reorder("input", from, to)}
-              onDropNew={addInput}
-              onRemove={(index) => remove("input", index)}
-            />
-            <p className="mlp-muted mlp-field-hint">
-              Drag to reorder, or focus a row and press Alt+↑ / Alt+↓.
-            </p>
-          </section>
-
-          <section className="mlp-card">
-            <h3 style={{ marginTop: 0 }}>
-              {selection?.kind === "input"
-                ? "Field"
-                : selection?.kind === "display"
-                  ? "Block"
-                  : "Template"}
-            </h3>
-            {selection?.kind === "input" && inputs[selection.index] && (
-              <InputInspector
-                key={`i${selection.index}`}
-                field={inputs[selection.index]}
-                onChange={(next) =>
-                  onChange({ ...schema, inputs: replaceAt(inputs, selection.index, next) })
-                }
+      <div
+        className={
+          showPreview ? "mlp-builder-shell mlp-builder-shell-split" : "mlp-builder-shell"
+        }
+        data-testid="builder-shell"
+      >
+        <div className="mlp-builder-work">
+          {view === "json" ? (
+            <div className="mlp-card">
+              <p className="mlp-muted" style={{ marginTop: 0 }}>
+                The same document the builder edits. Switch back and your changes are
+                there — these are two views, not two formats (§2.5).
+              </p>
+              <textarea
+                className="mlp-textarea mlp-mono"
+                rows={26}
+                value={jsonText}
+                data-testid="builder-json"
+                onChange={(e) => applyJson(e.target.value)}
               />
-            )}
-            {selection?.kind === "display" && display[selection.index] && (
-              <DisplayInspector
-                key={`d${selection.index}`}
-                block={display[selection.index]}
-                onChange={(next) =>
-                  onChange({ ...schema, display: replaceAt(display, selection.index, next) })
-                }
-              />
-            )}
-            {(!selection || selection.kind === "layout") && (
-              <LayoutInspector schema={schema} onChange={onChange} />
-            )}
-          </section>
-        </div>
-      )}
-
-      {showPreview && (
-        <div className="mlp-card mlp-preview-frame" data-testid="builder-preview">
-          <div className="mlp-muted" style={{ marginBottom: 8 }}>
-            Live preview — the real annotation renderer, on a generated sample unit.
-          </div>
-          {errors.length === 0 ? (
-            <Annotate
-              key={JSON.stringify(schema)}
-              client={previewClient(previewTask)}
-              annotatorId={0}
-              projectId={0}
-              schema={cleanSchema(schema)}
-              guidelines={schema.description ?? ""}
-            />
+            </div>
           ) : (
-            <p className="mlp-muted">Fix the errors above to see the preview.</p>
+            <div className="mlp-builder">
+              <aside className="mlp-card mlp-palette mlp-builder-palette">
+                <h4>Display blocks</h4>
+                {DISPLAY_PALETTE.map((entry) => (
+                  <PaletteButton key={entry.type} {...entry} onAdd={addDisplay} />
+                ))}
+                <h4>Input fields</h4>
+                {INPUT_PALETTE.map((entry) => (
+                  <PaletteButton key={entry.type} {...entry} onAdd={addInput} />
+                ))}
+              </aside>
+
+              <section className="mlp-card mlp-builder-canvas">
+                <h3 style={{ marginTop: 0 }}>Canvas</h3>
+                <button
+                  type="button"
+                  className="mlp-btn mlp-btn-tiny"
+                  data-testid="select-layout"
+                  onClick={() => setSelection({ kind: "layout" })}
+                >
+                  Template & layout settings
+                </button>
+
+                <h4 className="mlp-muted" style={{ marginBottom: 4 }}>
+                  What the annotator sees
+                </h4>
+                <Canvas
+                  testId="canvas-display"
+                  items={display.map((block, i) => ({
+                    key: `d${i}:${block.type}`,
+                    title: block.sources ? block.sources.join(" · ") : (block.source ?? "(no source)"),
+                    type: block.type,
+                  }))}
+                  selected={selection?.kind === "display" ? selection.index : null}
+                  emptyHint="Drag a display block here (or click one in the palette)."
+                  onSelect={(index) => setSelection({ kind: "display", index })}
+                  onReorder={(from, to) => reorder("display", from, to)}
+                  onDropNew={addDisplay}
+                  onRemove={(index) => remove("display", index)}
+                />
+
+                <h4 className="mlp-muted" style={{ marginBottom: 4 }}>
+                  What they answer
+                </h4>
+                <Canvas
+                  testId="canvas-inputs"
+                  items={inputs.map((field, i) => ({
+                    key: `i${i}:${field.id}`,
+                    title: `${field.label || field.id}${field.required ? " *" : ""}`,
+                    type: field.type,
+                  }))}
+                  selected={selection?.kind === "input" ? selection.index : null}
+                  emptyHint="Drag an input field here (or click one in the palette)."
+                  onSelect={(index) => setSelection({ kind: "input", index })}
+                  onReorder={(from, to) => reorder("input", from, to)}
+                  onDropNew={addInput}
+                  onRemove={(index) => remove("input", index)}
+                />
+                <p className="mlp-muted mlp-field-hint">
+                  Drag to reorder, or focus a row and press Alt+↑ / Alt+↓.
+                </p>
+              </section>
+
+              <section className="mlp-card mlp-builder-inspector">
+                <h3 style={{ marginTop: 0 }}>
+                  {selection?.kind === "input"
+                    ? "Field"
+                    : selection?.kind === "display"
+                      ? "Block"
+                      : "Template"}
+                </h3>
+                {selection?.kind === "input" && inputs[selection.index] && (
+                  <InputInspector
+                    key={`i${selection.index}`}
+                    field={inputs[selection.index]}
+                    onChange={(next) =>
+                      onChange({ ...schema, inputs: replaceAt(inputs, selection.index, next) })
+                    }
+                  />
+                )}
+                {selection?.kind === "display" && display[selection.index] && (
+                  <DisplayInspector
+                    key={`d${selection.index}`}
+                    block={display[selection.index]}
+                    onChange={(next) =>
+                      onChange({ ...schema, display: replaceAt(display, selection.index, next) })
+                    }
+                  />
+                )}
+                {(!selection || selection.kind === "layout") && (
+                  <LayoutInspector schema={schema} onChange={onChange} />
+                )}
+              </section>
+            </div>
           )}
         </div>
-      )}
+
+        {showPreview && (
+          // The preview is a *column*, not a footer: on a wide window it sits
+          // beside the canvas and sticks while you scroll, so the thing you are
+          // building stays on screen the whole time you build it. Below the
+          // breakpoint the shell collapses to one column and this lands at the
+          // bottom — the layout rule is in CSS, so there is no JS resize
+          // listener and no state to get out of sync with the window.
+          <aside className="mlp-builder-preview" data-testid="builder-preview">
+            <div className="mlp-card mlp-preview-frame">
+              <div className="mlp-muted" style={{ marginBottom: 8 }}>
+                Live preview — the real annotation renderer, on a generated sample unit.
+              </div>
+              {errors.length === 0 ? (
+                <Annotate
+                  key={JSON.stringify(schema)}
+                  client={previewClient(previewTask)}
+                  annotatorId={0}
+                  projectId={0}
+                  schema={cleanSchema(schema)}
+                  guidelines={schema.description ?? ""}
+                />
+              ) : (
+                <p className="mlp-muted">Fix the errors listed above to see the preview.</p>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

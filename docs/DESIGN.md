@@ -424,6 +424,30 @@ first step is reading the README to find which script to `exec` into the contain
 ready-to-open URLs into the log. Both steps are idempotent, so restarts are safe,
 and the flag defaults to off in the image so a real install isn't seeded with toys.
 
+### The preview is a column, and the breakpoints are answering two questions
+The builder first shipped with the live preview stacked *below* the editor inside
+a 1180px-capped admin shell — so on a normal window the thing being built was off
+the bottom of the page and effectively invisible while you built it. It is now a
+right-hand column that sticks as you scroll, collapsing to the bottom on a narrow
+window.
+
+The two breakpoints deliberately use different mechanisms, because they answer
+different questions:
+
+- **Shell split** (`.mlp-builder-shell`) — "is the *window* wide enough to show
+  the preview beside the editor?" That is genuinely about the viewport, so it is
+  a media query at 1280px.
+- **Editor columns** (`.mlp-builder`) — "is the *work column* wide enough for
+  palette + canvas + inspector?" That depends on whether the preview just took a
+  third of the width, so it is a container query on the work column. A media
+  query here would be guessing at a width it cannot see, and would be wrong in
+  exactly the case that matters (wide window, split shell).
+
+Both are pure CSS: no resize listener, no piece of React state that can disagree
+with the window. `.mlp-admin-main` lost its `max-width` at the same time — views
+that read better narrow (dashboard, wizard, most project tabs) set their own, and
+the two that want the room (builder, gallery) stop being boxed into a column.
+
 ### Postmortem: the options editor ate every newline
 The inspector's "options, one per line" box rendered `options.join("\n")` while
 storing `split("\n").filter(Boolean)` — so pressing Enter produced a trailing

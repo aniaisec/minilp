@@ -281,6 +281,41 @@ describe("builder and JSON are two views of one document (§2.5)", () => {
   });
 });
 
+// --- layout -----------------------------------------------------------------
+
+describe("preview placement", () => {
+  it("puts the preview beside the editor in the same shell, not after it", () => {
+    render(
+      <TemplateBuilder schema={blankTemplate()} onChange={() => {}} />, // showPreview defaults on
+    );
+    const shell = screen.getByTestId("builder-shell");
+    const preview = screen.getByTestId("builder-preview");
+    // Both the work column and the preview are direct children of the shell, so
+    // one CSS rule decides side-by-side vs stacked — there is no JS branch and
+    // nothing to keep in sync with the window size.
+    expect(preview.parentElement).toBe(shell);
+    expect(shell).toHaveClass("mlp-builder-shell-split");
+    expect(shell.querySelector(".mlp-builder-work")).not.toBeNull();
+  });
+
+  it("keeps the preview beside the JSON view too", async () => {
+    render(<TemplateBuilder schema={blankTemplate()} onChange={() => {}} />);
+    await userEvent.click(screen.getByTestId("view-json"));
+    expect(screen.getByTestId("builder-json")).toBeInTheDocument();
+    expect(screen.getByTestId("builder-preview").parentElement).toBe(
+      screen.getByTestId("builder-shell"),
+    );
+  });
+
+  it("drops the split when the preview is hidden", () => {
+    render(
+      <TemplateBuilder schema={blankTemplate()} onChange={() => {}} showPreview={false} />,
+    );
+    expect(screen.queryByTestId("builder-preview")).not.toBeInTheDocument();
+    expect(screen.getByTestId("builder-shell")).not.toHaveClass("mlp-builder-shell-split");
+  });
+});
+
 // --- server errors ----------------------------------------------------------
 
 describe("server errors", () => {

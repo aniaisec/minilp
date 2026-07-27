@@ -337,10 +337,14 @@ pre.mlp-code {
   font-family: var(--font-mono);
   font-size: 13px;
 }
+/* The admin shell fills the window. Views that read better narrow (dashboard,
+   wizard, project tabs) set their own max-width; the ones that want the room —
+   the template builder and the gallery — get it instead of being boxed into a
+   column with the live preview pushed off the bottom of the page. */
 .mlp-admin-main {
   padding: 20px;
   margin: 0 auto;
-  max-width: var(--content-xl);
+  width: 100%;
 }
 
 .mlp-stack-lg {
@@ -899,16 +903,109 @@ input.mlp-number {
   font-size: 12px;
 }
 
-/* ---- visual template builder (§11) ---- */
-.mlp-builder {
+/* ---- visual template builder (§11) ----
+ *
+ * Two nested responsive layers, each answering a different question:
+ *
+ *   .mlp-builder-shell  — "is the WINDOW wide enough to show the preview beside
+ *                          the editor?" That is genuinely a viewport question,
+ *                          so it is a media query.
+ *   .mlp-builder        — "is the WORK COLUMN wide enough for three columns?"
+ *                          That depends on whether the preview took a third of
+ *                          the width, so it is a *container* query on the work
+ *                          column itself. A media query here would guess.
+ *
+ * Both are pure CSS: no resize listener, no state that can disagree with the
+ * window.
+ */
+.mlp-builder-shell {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--gap);
   align-items: start;
 }
-@media (max-width: 1100px) {
+.mlp-builder-work {
+  container-type: inline-size;
+  container-name: builder-work;
+  min-width: 0;
+}
+
+/* Wide window: preview to the right, and it follows you down the page. */
+@media (min-width: 1280px) {
+  .mlp-builder-shell-split {
+    grid-template-columns: minmax(0, 1fr) minmax(400px, 34%);
+  }
+  .mlp-builder-preview {
+    position: sticky;
+    /* Clears the sticky admin bar — same offset the gallery list uses. */
+    top: 76px;
+    max-height: calc(100vh - 92px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Narrow window: the shell is already one column, so the preview lands at the
+   bottom. Nothing sticky — there is no room to spare. */
+.mlp-builder-preview {
+  min-width: 0;
+}
+.mlp-builder-preview .mlp-preview-frame {
+  margin: 0;
+}
+.mlp-builder-preview .mlp-annotate {
+  padding: 8px;
+}
+
+.mlp-builder {
+  display: grid;
+  gap: var(--gap);
+  align-items: start;
+  /* Default (narrow work column): everything stacked. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "palette"
+    "canvas"
+    "inspector";
+}
+.mlp-builder-palette {
+  grid-area: palette;
+}
+.mlp-builder-canvas {
+  grid-area: canvas;
+  min-width: 0;
+}
+.mlp-builder-inspector {
+  grid-area: inspector;
+  min-width: 0;
+}
+
+/* Medium work column: palette beside a stacked canvas + inspector. */
+@container builder-work (min-width: 700px) {
   .mlp-builder {
-    grid-template-columns: 1fr;
+    grid-template-columns: 190px minmax(0, 1fr);
+    grid-template-areas:
+      "palette canvas"
+      "palette inspector";
+  }
+}
+
+/* Wide work column: the full three-column builder. */
+@container builder-work (min-width: 1080px) {
+  .mlp-builder {
+    grid-template-columns: 190px minmax(0, 1fr) minmax(320px, 26rem);
+    grid-template-areas: "palette canvas inspector";
+  }
+}
+
+/* Fallback for engines without container queries: fall back to the viewport,
+   which is the right guess often enough to stay usable. */
+@supports not (container-type: inline-size) {
+  @media (min-width: 1500px) {
+    .mlp-builder {
+      grid-template-columns: 190px minmax(0, 1fr) minmax(320px, 26rem);
+      grid-template-areas: "palette canvas inspector";
+    }
   }
 }
 .mlp-palette h4 {

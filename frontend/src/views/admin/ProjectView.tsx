@@ -24,6 +24,11 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "export", label: "Export" },
 ];
 
+// Most tabs read better in a column. "Configure" holds the template builder,
+// which wants the room — capping it there would squeeze the live preview back
+// out of view, which is the whole thing the side-by-side layout fixes.
+const WIDE_TABS = new Set<Tab>(["config"]);
+
 export function ProjectView({
   client,
   projectId,
@@ -36,7 +41,10 @@ export function ProjectView({
   const [tab, setTab] = useState<Tab>("progress");
 
   return (
-    <div className="mlp-stack-lg" style={{ maxWidth: "var(--content-xl)" }}>
+    <div
+      className="mlp-stack-lg"
+      style={{ maxWidth: WIDE_TABS.has(tab) ? "none" : "var(--content-xl)" }}
+    >
       <div className="mlp-actions" style={{ gap: 12 }}>
         <button className="mlp-btn" onClick={onBack}>
           ← projects
