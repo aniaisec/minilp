@@ -19,11 +19,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-MATCH_KINDS = ("exact", "within", "jaccard")
+MATCH_KINDS = ("exact", "within", "jaccard", "ordered")
 
 DEFAULT_MIN_CONSENSUS = 0.67
 DEFAULT_TOLERANCE = 1
 DEFAULT_JACCARD_THRESHOLD = 0.5
+
+# Per-input-type default match kind (§2.6 — a new value shape may need a default
+# other than ``exact``). ``ranking`` stores an ordered array where position *is*
+# the judgment, so the set-comparison ``exact`` uses for checkbox answers would
+# call [A,B] and [B,A] identical — the opposite of what a ranking means.
+DEFAULT_MATCH_BY_INPUT_TYPE = {
+    "ranking": "ordered",
+}
+
+
+def input_types(template_schema: dict[str, Any] | None) -> dict[str, str]:
+    """``{input_id: type}`` for a template — lets rules default per value shape."""
+    if not template_schema:
+        return {}
+    return {
+        f["id"]: f["type"]
+        for f in template_schema.get("inputs", []) or []
+        if "id" in f and "type" in f
+    }
 
 
 class MatchError(ValueError):
@@ -61,11 +80,20 @@ def rules_for(agreement: dict[str, Any] | None) -> dict[str, MatchRule]:
     return {key: MatchRule.from_policy(policy) for key, policy in agreement.items()}
 
 
-def rule_for(agreement: dict[str, Any] | None, key: str) -> MatchRule:
-    """The rule for one input key; unlisted keys default to exact match."""
-    if not agreement or key not in agreement:
-        return MatchRule()
-    return MatchRule.from_policy(agreement[key])
+def rule_for(
+    agreement: dict[str, Any] | None, key: str, input_type: str | None = None
+) -> MatchRule:
+    """The rule for one input key.
+
+    An explicit project policy always wins. Otherwise the key falls back to the
+    default for its *input type* (``ranking`` → ``ordered``), and finally to
+    exact match — so a template can add a value shape with different equality
+    semantics without every project having to declare a policy for it.
+    """
+    if agreement and key in agreement:
+        return MatchRule.from_policy(agreement[key])
+    default_kind = DEFAULT_MATCH_BY_INPUT_TYPE.get(input_type or "", "exact")
+    return MatchRule(match=default_kind)
 
 
 # --- the rules themselves ---------------------------------------------------
@@ -106,7 +134,10 @@ def values_match(a: Any, b: Any, rule: MatchRule) -> bool:
                   Non-numeric values fall back to exact so a malformed answer
                   can never silently "agree" with everything.
     ``jaccard`` — set overlap >= threshold.
+    ``ordered`` — sequence equality: same members *in the same order* (rankings).
     """
+    if rule.match == "ordered":
+        return _hashable(a) == _hashable(b)
     if rule.match == "within":
         if isinstance(a, bool) or isinstance(b, bool):
             return a == b

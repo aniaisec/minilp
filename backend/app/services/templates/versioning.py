@@ -10,7 +10,12 @@ from typing import Any
 
 
 def _input_signature(inp: dict[str, Any]) -> tuple:
-    """The value-affecting projection of a single input."""
+    """The value-affecting projection of a single input.
+
+    ``min``/``max``/``step`` (M6 ``number``/``slider``) are in here because they
+    bound the domain of the stored value: widening a slider from 0-10 to 0-100
+    re-shapes what a 7 means, exactly like adding a likert point does.
+    """
     return (
         inp["id"],
         inp["type"],
@@ -18,6 +23,7 @@ def _input_signature(inp: dict[str, Any]) -> tuple:
         bool(inp.get("allow_other", False)),
         bool(inp.get("required", False)),
         _scale_signature(inp.get("scale")),
+        (inp.get("min"), inp.get("max"), inp.get("step")),
     )
 
 

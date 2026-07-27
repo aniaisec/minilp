@@ -36,7 +36,22 @@ export function normalizeKey(key: string): string {
   return ARROW_ALIASES[k] ?? k;
 }
 
-const CHOICE_INPUT_TYPES = new Set(["radio", "checkbox", "likert", "choice_buttons"]);
+// Which input types hand hotkeys to their options (§2.4). Dropdowns
+// (select/multiselect) and ranking are deliberately absent: they exist for long
+// option lists, where per-option keys would exhaust the budget. Mirrors
+// CHOICE_INPUT_TYPES in backend `services/templates/spec.py`.
+const CHOICE_INPUT_TYPES = new Set([
+  "radio",
+  "checkbox",
+  "likert",
+  "choice_buttons",
+  "rating",
+  "boolean",
+]);
+// Types deriving their labels from `scale` rather than `options`.
+const SCALE_INPUT_TYPES = new Set(["likert", "rating"]);
+// `boolean` renders a two-button toggle, so it gets keys like any choice input.
+export const BOOLEAN_LABELS = ["Yes", "No"];
 
 export interface InputHotkeys {
   // option label -> normalized key
@@ -51,7 +66,7 @@ export interface HotkeyAssignment {
 }
 
 export function optionLabels(inp: InputField): string[] {
-  if (inp.type === "likert") {
+  if (SCALE_INPUT_TYPES.has(inp.type)) {
     const scale = inp.scale ?? {};
     if (scale.labels) return [...scale.labels];
     const lo = scale.min ?? 1;
@@ -60,6 +75,7 @@ export function optionLabels(inp: InputField): string[] {
     for (let n = lo; n <= hi; n++) out.push(String(n));
     return out;
   }
+  if (inp.type === "boolean") return [...BOOLEAN_LABELS];
   return [...(inp.options ?? [])];
 }
 

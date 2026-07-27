@@ -53,6 +53,37 @@ class ProjectCreate(BaseModel):
     config: dict[str, Any] | None = None
 
 
+class ProjectPatch(BaseModel):
+    """Edit a live project (§2.5 M6 — the editor's third entry point).
+
+    Every field is optional; only what is sent changes. ``template_schema``
+    triggers clone-and-rebind when it differs from the bound template.
+    """
+
+    name: str | None = None
+    description: str | None = None
+    guidelines_md: str | None = None
+    labels_per_unit: int | None = None
+    max_labels_per_unit: int | None = None
+    agreement: dict[str, Any] | None = None
+    gold_ratio: float | None = None
+    lease_minutes: int | None = None
+    min_reputation: float | None = None
+    pipeline: list[dict[str, Any]] | None = None
+    config: dict[str, Any] | None = None
+    template_schema: dict[str, Any] | None = Field(
+        default=None,
+        description="Full template document. If it differs from the project's "
+        "current template, the template is cloned and the project rebound to the "
+        "copy — an edit here never reshapes a template other projects share.",
+    )
+
+    def plain_fields(self) -> dict[str, Any]:
+        """The column-level fields, excluding those needing special handling."""
+        special = {"labels_per_unit", "max_labels_per_unit", "template_schema"}
+        return {k: v for k, v in self.model_dump(exclude_unset=True).items() if k not in special}
+
+
 class ProjectOut(BaseModel):
     id: int
     name: str

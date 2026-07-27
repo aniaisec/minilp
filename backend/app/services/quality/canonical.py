@@ -61,14 +61,102 @@ def canonicalize_positional(label: Any, variant: str | None) -> Any:
     return label
 
 
+# --- M6 value-shape canonicalizers (§2.3, §2.6 step 3) ----------------------
+#
+# Each new input type declares a value shape; these functions are the "optional
+# canonicalizer" of the extensibility contract. They are deliberately forgiving
+# about what arrives (an HTML number field yields a string, a checkbox yields
+# "true") and strict about what is stored, because gold grading and agreement
+# only ever read the canonical side.
+
+_TRUE_TOKENS = {"true", "yes", "y", "1", "on"}
+_FALSE_TOKENS = {"false", "no", "n", "0", "off"}
+
+
+def _to_bool(raw: Any) -> Any:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, int | float):
+        return bool(raw)
+    if isinstance(raw, str):
+        token = raw.strip().lower()
+        if token in _TRUE_TOKENS:
+            return True
+        if token in _FALSE_TOKENS:
+            return False
+    return raw  # unrecognized → pass through; a gold will simply not match
+
+
+def _to_number(raw: Any, *, integral: bool = False) -> Any:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, int | float):
+        return int(raw) if integral else raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            number = float(raw.strip())
+        except ValueError:
+            return raw
+        if integral or number.is_integer():
+            return int(number)
+        return number
+    return raw
+
+
+def _to_tags(raw: Any) -> Any:
+    """Free-form tag entry → a de-duplicated, trimmed, lower-cased string array.
+
+    Case- and whitespace-folding is what makes tags comparable at all: without
+    it "Spam", "spam " and "spam" are three different labels and every agreement
+    metric over the key is noise.
+    """
+    items: list[Any]
+    if isinstance(raw, str):
+        items = raw.split(",")
+    elif isinstance(raw, list | tuple):
+        items = list(raw)
+    else:
+        return raw
+    out: list[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            continue
+        tag = " ".join(item.strip().lower().split())
+        if tag and tag not in out:
+            out.append(tag)
+    return out
+
+
+def _to_string_list(raw: Any) -> Any:
+    """``ranking`` — an ordered array; order is the answer, so nothing is sorted."""
+    if isinstance(raw, list | tuple):
+        return [v for v in raw if isinstance(v, str)]
+    return raw
+
+
+_BY_TYPE = {
+    "boolean": _to_bool,
+    "number": _to_number,
+    "slider": _to_number,
+    "rating": lambda raw: _to_number(raw, integral=True),
+    "likert": lambda raw: _to_number(raw, integral=True),
+    "tags": _to_tags,
+    "ranking": _to_string_list,
+}
+
+
 def canonicalize_input(field: dict[str, Any], raw: Any, *, variant_str: str | None) -> Any:
     """Canonicalize one input's raw answer."""
-    if field.get("type") == "choice_buttons" and variant_str:
+    itype = field.get("type")
+    if itype == "choice_buttons" and variant_str:
         return canonicalize_positional(raw, variant_str)
     if field.get("allow_other"):
         if isinstance(raw, list):
             return [_strip_other(v) for v in raw]
         return _strip_other(raw)
+    converter = _BY_TYPE.get(itype)
+    if converter is not None:
+        return converter(raw)
     return raw
 
 

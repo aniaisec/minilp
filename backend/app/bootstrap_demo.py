@@ -108,6 +108,30 @@ QUALITY_UNITS = "\n".join(
     )
 )
 
+# --- M6 palette demo (§2.1) -------------------------------------------------
+# The rubric template exercises every field type the visual builder can drop:
+# rating, slider, dropdown, tags, ranking, yes/no, date. Clone it in the builder
+# (#/admin/templates) to see the palette on a task that plausibly wants all of it.
+RUBRIC_UNITS = _jsonl(
+    [
+        {
+            "content": "## Refund policy\n\nItems may be returned within 30 days. "
+            "Shipping is refunded only if the item arrived damaged.",
+            "context": "Help-centre article draft",
+        },
+        {
+            "content": "# Getting started\n\nInstall the CLI, run `init`, then `deploy`. "
+            "That's it — you're live.",
+            "context": "Docs quickstart",
+        },
+        {
+            "content": "Our new plan is *literally* the best thing ever and everyone "
+            "should switch immediately!!!",
+            "context": "Marketing email draft",
+        },
+    ]
+)
+
 QUALITY_CONFIG = {
     "quality": {
         "gold_threshold": 0.7,
@@ -220,6 +244,16 @@ def main() -> None:
                 "units_jsonl": SIDE_BY_SIDE_UNITS,
             },
             {
+                "template_name": "content-review-rubric",
+                "name": "Demo — Content review rubric (M6 palette)",
+                "k": 1,
+                "guidelines": "Rate the draft, then say whether it needs a human "
+                "reviewer. Every field type the **visual builder** offers is on this "
+                "form: stars, a slider, a dropdown, tags, a drag-to-order ranking, a "
+                "yes/no and a date. All of it is keyboard-reachable — press `?`.",
+                "units_jsonl": RUBRIC_UNITS,
+            },
+            {
                 "template_name": "image-classification",
                 "name": "Demo — Quality (golds + consensus)",
                 "k": 2,
@@ -250,11 +284,26 @@ def main() -> None:
                 f"    http://localhost:5173/?project={p.id}"
                 f"&annotator={annotator.id}&key={ADMIN_API_KEY}\n"
             )
+        print("Admin surface (progress · bias · configure · add tasks · export):\n")
+        print(f"  http://localhost:5173/#/admin?key={ADMIN_API_KEY}")
+        print(
+            f"  http://localhost:5173/#/admin/templates?key={ADMIN_API_KEY}   (gallery + builder)"
+        )
+        print(
+            f"  http://localhost:5173/#/admin/templates/new?key={ADMIN_API_KEY}"
+            "   (build a template from scratch)\n"
+        )
         print("Quality endpoints (M4) for the annotator above:\n")
         print(
             f"  curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
             f"localhost:8000/annotators/{annotator.id}/report\n"
         )
+        if all_demo:
+            print("Export (M6, §10):\n")
+            print(
+                f"  curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"'localhost:8000/projects/{all_demo[0].id}/export?format=labels'\n"
+            )
     finally:
         db.close()
 

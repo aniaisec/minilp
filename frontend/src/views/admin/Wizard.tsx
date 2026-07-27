@@ -150,6 +150,10 @@ export function Wizard({
             {nVariants > 1 && ` · ${nVariants} variants (${selected.schema.variants?.dimension})`}
           </p>
         )}
+        <p className="mlp-muted mlp-field-hint">
+          None of these fit? <a href="#/admin/templates/new">Build one from scratch</a> in
+          the visual builder (§2.5), then come back and pick it here.
+        </p>
       </section>
 
       <section className="mlp-card">

@@ -1,9 +1,13 @@
 // Admin shell (§11) — a tiny hash router so the admin surface needs no routing
 // dependency, matching the annotation view's zero-dep philosophy. Routes:
 //
-//   #/admin                 → dashboard (project list)
-//   #/admin/new             → new-project wizard
-//   #/admin/project/<id>    → per-project progress / units / bias / roster
+//   #/admin                     → dashboard (project list)
+//   #/admin/new                 → new-project wizard
+//   #/admin/templates           → template gallery
+//   #/admin/templates/new       → visual builder, from scratch      (M6, §2.5)
+//   #/admin/templates/<id>/edit → visual builder, editing           (M6, §2.5)
+//   #/admin/project/<id>        → per-project progress / units / bias / roster /
+//                                 configure / add tasks / export
 //
 // The API key is read from ?key= (as the annotation view does) and can also be
 // pasted into the header field, so an admin can drive the whole surface with the
@@ -16,6 +20,7 @@ import { Dashboard } from "./Dashboard";
 import { ProjectView } from "./ProjectView";
 import { TemplateGallery } from "./TemplateGallery";
 import { Wizard } from "./Wizard";
+import { TemplateEditor } from "./builder/TemplateEditor";
 
 function useHash(): string {
   const [hash, setHash] = useState(() => window.location.hash || "#/admin");
@@ -83,8 +88,26 @@ export function AdminApp() {
   const path = hash.split("?")[0];
   const parts = path.replace(/^#\/?/, "").split("/"); // e.g. ["admin","project","3"]
   let body;
-  if (parts[1] === "templates") {
-    body = <TemplateGallery client={client} />;
+  if (parts[1] === "templates" && parts[2] === "new") {
+    body = (
+      <TemplateEditor client={client} onSaved={() => nav("#/admin/templates")} />
+    );
+  } else if (parts[1] === "templates" && parts[2] && parts[3] === "edit") {
+    body = (
+      <TemplateEditor
+        client={client}
+        templateId={Number(parts[2])}
+        onSaved={() => nav("#/admin/templates")}
+      />
+    );
+  } else if (parts[1] === "templates") {
+    body = (
+      <TemplateGallery
+        client={client}
+        onNew={() => nav("#/admin/templates/new")}
+        onEdit={(id) => nav(`#/admin/templates/${id}/edit`)}
+      />
+    );
   } else if (parts[1] === "new") {
     body = <Wizard client={client} onCreated={(id) => nav(`#/admin/project/${id}`)} />;
   } else if (parts[1] === "project" && parts[2]) {

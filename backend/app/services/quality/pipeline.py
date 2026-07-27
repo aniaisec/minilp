@@ -90,9 +90,16 @@ def on_label_submitted(db: Session, label: Label) -> QualityOutcome:
     # 1. Server-side canonicalization (§2.6).
     canonicalize_label(db, label)
 
-    # 2. Gold grading (§6.1).
+    # 2. Gold grading (§6.1). The template goes along so per-input-type default
+    # match rules apply (§6.4) — a ranking gold compares in order.
     if unit.is_gold:
-        grade = grade_label(unit.gold_expected, label.value, project.agreement)
+        template = db.get(Template, project.template_id)
+        grade = grade_label(
+            unit.gold_expected,
+            label.value,
+            project.agreement,
+            template.schema if template else None,
+        )
         outcome.gold = grade
         if grade.graded:
             label.gold_passed = grade.passed

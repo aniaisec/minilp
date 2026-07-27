@@ -345,7 +345,103 @@ had no click handler — only the `o` hotkey activated it — and single-input
 templates auto-submitted on select with no way to review. Auto-submit is now an
 opt-in toggle, default off; both are covered in `Annotate.test.tsx`.)
 
+## M6 — Authoring + export (human-MVP release)
+
+### The builder and the JSON editor share one state object, not two
+`TemplateBuilder` renders whichever view is selected over a single
+`TemplateSchema` owned by the caller. The JSON view re-serializes from that object
+on entry and parses back into it on every keystroke; the canvas mutates it
+directly. This is why "switching views never loses work" is structurally true
+rather than a feature someone has to maintain — there is nothing to synchronize.
+The alternative (a text buffer alongside a parsed model, reconciled on switch) has
+a failure mode we would have had to invent: unparseable text with pending canvas
+edits, and no honest answer for which wins.
+
+### Client-side validation is a live-feedback port, and says so
+`frontend/src/views/admin/builder/validate.ts` re-implements the subset of
+`services/templates/validation.py` an author trips over while dragging fields —
+missing options, bad bounds, hotkey conflicts. Two implementations of one ruleset
+is a real cost; the alternative was a round trip per keystroke, which makes the
+"every change re-renders instantly" bar (§2.5) unreachable. The mitigation is
+explicit precedence: **the server is authoritative**, its errors render verbatim
+*above* ours, and save always goes through it. If the two disagree, the author
+sees the server's answer, not a silent divergence.
+
+### Dropdowns and rankings get no per-option hotkeys
+`select`, `multiselect` and `ranking` exist *because* the option list is long
+enough that radio/checkbox would sprawl. Handing 40 options one key each would
+exhaust the 1–9 + letters budget in a single field and collide with every other
+input on the page (§2.4). They stay keyboard-*reachable* through native element
+semantics (and ranking adds Alt+↑/↓), which is the invariant that actually
+matters — "completable without a mouse", not "one key per thing".
+
+### Match rules default per input type, not just per project policy
+`exact` compares lists as sets, because a checkbox answer is a set. A `ranking`
+answer is a sequence where position *is* the judgment, so the same default would
+call `[A,B]` and `[B,A]` identical — silently, in gold grading, consensus and
+agreement at once. Rather than require every project to declare a policy for every
+ranking key, `rule_for` now takes an optional input type and falls back to
+`DEFAULT_MATCH_BY_INPUT_TYPE` (`ranking` → the new `ordered` kind). An explicit
+project policy still wins. The three call sites (gold, consensus, reputation) load
+the template to supply the types; that is one extra `db.get` on paths that already
+hold the project.
+
+### Changing K reshapes slots in whole rounds, and refuses to shrink past work
+`update_project` grows overlap by planning a *complete* balanced round per unit
+(`plan_slot_variants`), never a partial one — a half-round would break K/n at
+completion, which §2.7 states as an invariant rather than a goal. Shrinking only
+removes `open` slots and raises `ProjectError` when a unit has already been
+labeled or leased past the new K. Both alternatives there are worse than failing:
+deleting a filled slot destroys a collected label, and leaving it inflates the
+unit past its stated overlap. The error names the unit so the admin can act on it.
+
+### A project-level template edit always clones and rebinds
+Editing the schema from the project editor never mutates the bound template, even
+when the change is presentation-only and even when the template is custom. The
+rule is boring on purpose: an admin editing *their project* should not have to
+know whether some other project shares the template. Template-level editing
+(`PUT /templates/{id}`) keeps the full §2.5 versioning nuance — update in place vs
+bump — because there the object being edited is unambiguous.
+
+### The `labels` export is also the re-import format
+Export rows put `payload`, `is_gold`, `gold_expected` and `priority` exactly where
+`units:bulk` reads them, with the analysis fields (`final_label`, `consensus`,
+per-label provenance) alongside as extra top-level keys ingest ignores. So
+"export re-imports cleanly" (§12 M6 acceptance) needs no transformation step, and
+an export doubles as a backup. `raw` deliberately includes voided labels flagged
+`is_valid: false`: a bias study needs to know a rater was removed, not to have
+their rows vanish.
+
+Exports materialize before the response starts rather than streaming lazily — a
+format mismatch (preference on a classification project) must be a 422 with an
+explanation, not a 200 that truncates after two rows.
+
+### The demo is bootstrapped by the container entrypoint
+`docker compose up` → annotate in under 2 minutes (§12 M6) is not reachable if the
+first step is reading the README to find which script to `exec` into the container.
+`backend/entrypoint.sh` migrates, seeds the gallery, and — when
+`MINILP_BOOTSTRAP_DEMO=1`, which compose sets — bootstraps the demo and prints
+ready-to-open URLs into the log. Both steps are idempotent, so restarts are safe,
+and the flag defaults to off in the image so a real install isn't seeded with toys.
+
+### Postmortem: the options editor ate every newline
+The inspector's "options, one per line" box rendered `options.join("\n")` while
+storing `split("\n").filter(Boolean)` — so pressing Enter produced a trailing
+blank line, which was filtered out, which removed the newline, which ran every
+option together into one. The same bug hit the comma-separated hotkeys field.
+Caught by `TemplateBuilder.test.tsx` typing multi-line text the way a person does,
+not by asserting on a pre-built schema.
+
+Fix: `BufferedText` keeps the literal typed text in local state and emits the
+parsed value on every keystroke, so live validation and preview still work.
+Generalized lesson: **a control whose displayed value is derived from a lossy parse
+of its own input will eat characters** — keep the buffer, derive the value.
+
 ## Planned (later milestones)
+- README GIF (M6) — needs a screen recording of the seeded demo; the only M6
+  deliverable not landed
+- `span_select`, `image_region` and `audio_segment` (§2.1) — each is a value shape
+  plus a widget under the same contract as the M6 palette, not new plumbing
 - Escalated units are flagged (`units.escalated_at`) but there is no review queue
   to work them yet — that queue, and `final_labels`, are M8 (§7.2)
 - Judge-vs-human kappa (`?group=cross`) returns empty until M7 enrolls judges

@@ -27,8 +27,8 @@ from typing import Any
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from app.models import Annotator, Label, Project, ReputationEvent, Slot, Unit
-from app.services.quality.matching import _hashable, rule_for, values_match
+from app.models import Annotator, Label, Project, ReputationEvent, Slot, Template, Unit
+from app.services.quality.matching import _hashable, input_types, rule_for, values_match
 from app.services.quality.thresholds import QualitySettings, quality_settings
 from app.services.slots.lifecycle import void_labels
 
@@ -143,6 +143,8 @@ def peer_agreement(
         if unit is None:
             continue
         project = db.get(Project, unit.project_id)
+        template = db.get(Template, project.template_id) if project else None
+        types = input_types(template.schema if template else None)
         peers = list(
             db.scalars(
                 select(Label).where(
@@ -169,7 +171,7 @@ def peer_agreement(
             ]
             if not peer_values:
                 continue
-            rule = rule_for(project.agreement if project else None, key)
+            rule = rule_for(project.agreement if project else None, key, types.get(key))
             majority, _ = Counter(_hashable(v) for v in peer_values).most_common(1)[0]
             comparisons += 1
             if values_match(my_value, majority, rule):

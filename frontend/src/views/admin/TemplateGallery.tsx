@@ -40,7 +40,17 @@ function firstVariant(template: Template): Record<string, unknown> | null {
   return { [v.dimension]: v.values[0] };
 }
 
-export function TemplateGallery({ client }: { client: MiniLpClient }) {
+export function TemplateGallery({
+  client,
+  onNew,
+  onEdit,
+}: {
+  client: MiniLpClient;
+  /** Open the visual builder on a blank template (M6, §2.5). */
+  onNew?: () => void;
+  /** Open the visual builder on an existing template (M6, §2.5). */
+  onEdit?: (templateId: number) => void;
+}) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [sample, setSample] = useState<TemplateSample | null>(null);
@@ -122,6 +132,16 @@ export function TemplateGallery({ client }: { client: MiniLpClient }) {
     <div className="mlp-gallery">
       <aside className="mlp-gallery-list mlp-card">
         <h3>Templates</h3>
+        {onNew && (
+          <button
+            className="mlp-btn mlp-btn-primary"
+            style={{ width: "100%", marginBottom: 10 }}
+            data-testid="gallery-new"
+            onClick={onNew}
+          >
+            + Build from scratch
+          </button>
+        )}
         {error && <div className="mlp-error">{error}</div>}
         {templates.map((t) => (
           <button
@@ -143,6 +163,39 @@ export function TemplateGallery({ client }: { client: MiniLpClient }) {
                 {selected.name} <span className="mlp-muted">v{selected.version}</span>
               </h3>
               {selected.description && <p className="mlp-muted">{selected.description}</p>}
+              {onEdit && (
+                <div className="mlp-actions" style={{ marginBottom: 10 }}>
+                  <button
+                    className="mlp-btn"
+                    data-testid="gallery-edit"
+                    onClick={() => onEdit(selected.id)}
+                  >
+                    {selected.kind === "builtin" ? "Open in builder" : "Edit in builder"}
+                  </button>
+                  <button
+                    className="mlp-btn"
+                    data-testid="gallery-clone"
+                    onClick={async () => {
+                      try {
+                        const copy = await client.cloneTemplate(selected.id);
+                        setTemplates((ts) => [...ts, copy]);
+                        setSelectedId(copy.id);
+                        onEdit(copy.id);
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : String(e));
+                      }
+                    }}
+                  >
+                    Use as starting point
+                  </button>
+                  {selected.kind === "builtin" && (
+                    <span className="mlp-muted" style={{ fontSize: 12 }}>
+                      Gallery templates are immutable — saving from the builder
+                      creates an editable copy (§2.5).
+                    </span>
+                  )}
+                </div>
+              )}
               <details>
                 <summary>
                   Sample data{" "}

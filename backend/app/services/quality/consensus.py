@@ -28,7 +28,13 @@ from sqlalchemy.orm import Session
 
 from app.models import Label, Project, Slot, Template, Unit
 from app.services.quality.agreement import vote_entropy
-from app.services.quality.matching import MatchRule, _hashable, rule_for, values_match
+from app.services.quality.matching import (
+    MatchRule,
+    _hashable,
+    input_types,
+    rule_for,
+    values_match,
+)
 from app.services.slots.generation import plan_slot_variants, variant_values
 
 ON_DISAGREEMENT_POLICIES = ("escalate", "grow_then_escalate")
@@ -144,8 +150,10 @@ def evaluate_unit(db: Session, unit: Unit, project: Project) -> ConsensusResult:
         for key, value in (label.value or {}).items():
             votes_by_key.setdefault(key, []).append(value)
 
+    template = db.get(Template, project.template_id)
+    types = input_types(template.schema if template else None)
     keys = [
-        key_consensus(key, votes, rule_for(project.agreement, key))
+        key_consensus(key, votes, rule_for(project.agreement, key, types.get(key)))
         for key, votes in sorted(votes_by_key.items())
     ]
     return ConsensusResult(

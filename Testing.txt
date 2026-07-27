@@ -527,3 +527,246 @@ npm run build       # tsc -b (strict, noUnusedLocals) + vite build — must pass
 #        blocks Create otherwise), gold ratio, min reputation.
 #     On success it jumps to the new project's Progress tab. Label a couple of
 #     its units and reload to watch the funnel move.
+
+
+#M6 Testing — Authoring (visual builder + expanded palette), project editing,
+#             add-tasks, export, docs, demo
+
+# ============================================================================
+# 0. AUTOMATED SUITES — run these first; everything below assumes they're green
+# ============================================================================
+
+# --- Backend (275 tests; needs a real PostgreSQL, see the M1 section above) ---
+cd backend
+pip install -e ".[dev]"
+ruff check . && ruff format --check .
+pytest
+#   New in M6:
+#     tests/test_palette_m6.py      37 — every new field type: validation, hotkeys,
+#                                        value shapes, matching, versioning
+#     tests/test_project_edit.py    11 — PATCH /projects: K reshaping, balance,
+#                                        clone-and-rebind
+#     tests/test_export.py          12 — all four export formats + the re-import
+#                                        round-trip
+#     tests/test_gold_regression.py  8 — "present -> served & measured;
+#                                        absent -> uninterrupted collection"
+#     tests/test_m6_api.py          12 — the endpoints through FastAPI
+#   Run just the M6 set:
+#     pytest tests/test_palette_m6.py tests/test_project_edit.py \
+#            tests/test_export.py tests/test_gold_regression.py tests/test_m6_api.py
+
+# --- Frontend (135 tests) ---
+cd ../frontend
+npm install
+npm run test          # vitest
+npm run build         # tsc -b + vite build (typecheck must pass)
+#   New in M6:
+#     src/widgets/palette.test.tsx                      35 — every new widget
+#     src/views/admin/builder/schema.test.ts            20 — palette/DnD/clean
+#     src/views/admin/builder/TemplateBuilder.test.tsx  20 — the builder as driven
+#   Run just those:
+#     npx vitest run src/widgets/palette.test.tsx src/views/admin/builder
+
+# ============================================================================
+# 1. START A STACK
+# ============================================================================
+# Option A — full stack in Docker (this is also the M6 demo acceptance path):
+docker compose up --build
+#   The backend now migrates, seeds the gallery AND bootstraps the demo on
+#   start-up. Watch the log for:
+#       ==> applying migrations
+#       ==> seeding gallery templates
+#       ==> bootstrapping demo projects
+#       === MiniLP demo ready ===
+#   ...followed by ready-to-open URLs. Nothing else to run.
+#   (Set MINILP_BOOTSTRAP_DEMO=0 in docker-compose.yml to skip the demo projects.)
+#
+# Option B — day-to-day dev (see the GOTCHA at the top of this file):
+docker compose up -d db
+cd backend && uvicorn app.main:app --reload
+cd frontend && npm run dev
+#   Then seed + bootstrap by hand, once:
+#     python -m app.seed
+#     python -m app.bootstrap_demo
+
+# Everything below uses:
+#     ADMIN KEY   dev-admin-key
+#     ANNOTATOR   id 1
+#     ADMIN UI    http://localhost:5173/#/admin?key=dev-admin-key
+
+# ============================================================================
+# 2. M6 ACCEPTANCE (§12) — the four claims the milestone makes
+# ============================================================================
+
+# --- A1) Build a working template from scratch and create a project on it -----
+# 1. Open  http://localhost:5173/#/admin/templates?key=dev-admin-key
+# 2. Click "+ Build from scratch". You land in the builder with a valid blank
+#    template (one text block, one radio) and NO errors.
+# 3. From the "Display blocks" palette, DRAG "Markdown" onto the upper canvas.
+#    (Clicking it does the same thing — the keyboard path.)
+#    -> a block appears; the inspector on the right shows its source.
+#    Set the source to  $unit.article
+# 4. From "Input fields", drag on: Rating, Slider, Dropdown, Tags, Ranking, Yes/no.
+# 5. Click each canvas row and edit it in the inspector:
+#      - Rating: label "Overall quality", scale max 5
+#      - Slider: label "Confidence", min 0, max 1, step 0.1
+#      - Dropdown: options one per line (type Enter between them — the newline
+#        must survive; this was a real bug, now covered by a test)
+#      - Ranking: 3–4 options
+# 6. REORDER: drag a row onto another; or click the ↑/↓ buttons; or focus a row
+#    (Tab to it) and press Alt+↑ / Alt+↓. All three must move it.
+# 7. Watch the LIVE PREVIEW below the canvas the whole time — it is the real
+#    annotation renderer. Press `?` inside it: every keyed option shows a badge.
+#    Rating gets 1..5; Dropdown and Ranking get NO keys (by design, §2.4).
+# 8. Click "JSON" in the view toggle -> your document is there, exactly. Edit a
+#    label in the JSON, click "Builder" -> the change is on the canvas. Two views,
+#    one document — nothing is lost either way.
+# 9. Break something on purpose: set a field's Hotkeys to  s, 1
+#    -> "hotkey 's' ... collides with a reserved key" appears and SAVE IS DISABLED.
+#    Remove it; save re-enables.
+# 10. Name the template, click "Create template".
+# 11. Go to "+ New project" (#/admin/new), pick your new template, add a name and
+#     a couple of units, Create. -> it lands on the project's Progress tab.
+# 12. Open the annotator link for it and label a unit end to end, keyboard only.
+
+# --- A2) Edit that project's guidelines/K and add a second batch --------------
+# 1. In the project, open the "Configure" tab.
+# 2. Change the guidelines, raise "Labels per unit (K)" from 1 to 2, Save.
+#    -> the note reports: "N slots opened to match the new overlap, in balanced
+#       rounds (§2.7)". Check the Progress tab: every unit now needs 2 labels.
+# 3. Try LOWERING K after labeling something -> refused, with a message naming the
+#    unit. (Nothing is silently discarded — that's the point.)
+# 4. Tick "Edit this project's template", change a field, Save configuration.
+#    -> the note reports the template was CLONED and the project REBOUND to the
+#       copy. Open #/admin/templates: the original still has its original fields.
+# 5. Open the "Add tasks" tab. Tick "Include gold questions in this batch" -> the
+#    example reshapes to show is_gold / gold_expected and the help text explains
+#    the contract. Name the batch, click "Add tasks".
+#    -> the report shows ingested/rejected counts and the new batch id; the
+#       Batches table below gains a row.
+# 6. Deliberately include a bad row (missing a required payload field, and a row
+#    with is_gold but no gold_expected) -> both are rejected BY LINE NUMBER while
+#    the good rows still land.
+
+# --- A3) A planted gold is served and moves gold accuracy; a gold-free project
+#          collects uninterrupted --------------------------------------------
+# 1. Use "Demo — Quality (golds + consensus)" (golds present, ratio 0.5) and
+#    "Demo — Image classification" (no golds at all).
+# 2. Label ~6 units in the QUALITY project. Then:
+#      curl -H "Authorization: Bearer dev-admin-key" localhost:8000/annotators/1/report
+#    -> live.gold_samples > 0 and live.gold_accuracy is a real number.
+# 3. Answer several quality golds WRONG (anything but "cat") -> you get paused,
+#    recent labels are voided, and the annotation view explains it. Resume with:
+#      curl -X POST -H "Authorization: Bearer dev-admin-key" \
+#           localhost:8000/annotators/1:resume
+# 4. Now label the whole IMAGE CLASSIFICATION project (gold_ratio is 0.5 there too
+#    in some configs, but it has NO golds). It must serve every unit without
+#    stalling, and the report's gold_samples for that project stays 0.
+#    -> "absent -> uninterrupted collection". This is what test_gold_regression.py
+#       pins; step 4 is the human version of it.
+# 5. Confirm golds stay INVISIBLE: nothing in the annotation UI, and nothing in
+#    the submit response, says which unit was a gold. To find out, ask the DB:
+#      docker compose exec db psql -U minilp -c \
+#        "SELECT id, is_gold FROM units WHERE project_id = <quality project id>;"
+
+# --- A4) Export re-imports cleanly -------------------------------------------
+# 1. Open a labeled project -> "Export" tab.
+# 2. Format "Labels" -> Preview. You get the row count and the first 3 rows
+#    pretty-printed: payload, final_label, consensus, and per-label provenance
+#    (annotator kind, reputation, variant).
+# 3. Click "Download .jsonl".
+# 4. Now RE-IMPORT it: go to a NEW project on the same template, "Add tasks" tab,
+#    upload the file you just downloaded (choose .json? no — paste it, or rename
+#    to .txt; the content is JSONL and the paste box takes it).
+#    Simpler via curl:
+#      curl -H "Authorization: Bearer dev-admin-key" \
+#           "localhost:8000/projects/<src>/export?format=labels" > labels.jsonl
+#      curl -X POST -H "Authorization: Bearer dev-admin-key" \
+#           -H "Content-Type: application/json" \
+#           -d "$(jq -Rs '{jsonl: ., format: "jsonl", batch_name: "round-trip"}' labels.jsonl)" \
+#           localhost:8000/projects/<dst>/units:bulk
+#    -> rejected_count is 0, unit_count equals the source's unit count, and the
+#       golds came back as golds.
+# 5. Try the other formats:
+#      ?format=raw          one row per label, with raw AND canonical + variant
+#      ?format=preference   only on a side-by-side project; classification
+#                           projects get a 422 explaining why (not a broken file)
+#      ?format=sft          only on a template with a free_text input
+
+# --- A5) docker compose up -> annotate the demo in under 2 minutes ------------
+# 1. docker compose down -v      (clean slate — drops the pgdata volume)
+# 2. docker compose up --build
+# 3. Copy the first annotator URL from the log, open it, label a task.
+#    Time it. Under 2 minutes from `up` to a submitted label is the bar.
+
+# ============================================================================
+# 3. THE EXPANDED PALETTE — one pass through every new field type
+# ============================================================================
+# Open the M6 demo project:
+#     http://localhost:5173/?project=<Content review rubric id>&annotator=1&key=dev-admin-key
+# (Or preview the template at #/admin/templates -> "content-review-rubric".)
+#
+# P1) RATING — click the 4th star: stars 1–4 fill, the read-out says "4 / 5".
+#     Press 1..5: the same. Value stored is an INTEGER, not "4 stars".
+# P2) SLIDER — drag it: the numeric read-out tracks live. Stored as a number.
+# P3) DROPDOWN (select) — long list, no per-option key badges (by design).
+#     It has allow_other: pick "Other…" and type a label.
+# P4) TAGS — type a topic, press Enter -> it becomes a chip. Type "a, b, c" ->
+#     three chips. Backspace on the empty box removes the last one. Click a
+#     chip's × to remove it. Enter must NOT submit the task while you're typing.
+# P5) RANKING — drag a row to reorder. Then use the ↑/↓ buttons. Then focus a row
+#     and press Alt+↑ / Alt+↓. Order is the answer: [a,b] and [b,a] are different
+#     (they compare with the `ordered` rule, not as sets).
+# P6) YES/NO — two buttons, keys assigned. Note that "No" is a real answer:
+#     a required boolean is satisfied by choosing No, and unanswered means
+#     untouched.
+# P7) DATE / DATETIME — native pickers; the stored value is the ISO string.
+# P8) Press `?` — the overlay badges every keyed element and NOTHING ELSE, which
+#     is the correct behavior for the unkeyed types.
+# P9) Submit. Then check what was actually stored (canonicalization is
+#     server-side, §2.6):
+#       curl -H "Authorization: Bearer dev-admin-key" localhost:8000/units/<id> | jq '.labels[0]'
+#     -> tags are lower-cased/trimmed/de-duplicated, the boolean is true/false
+#        (not "Yes"), numbers are numbers, and the ranking kept its order.
+
+# ============================================================================
+# 4. API-LEVEL SPOT CHECKS (PowerShell users: swap curl for Invoke-RestMethod)
+# ============================================================================
+K="dev-admin-key"
+
+# Gallery now has 7 templates (the M6 rubric was added)
+curl -s -H "Authorization: Bearer $K" localhost:8000/templates | jq 'length'
+
+# Create a template with the new field types
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"schema":{"name":"api-built","inputs":[
+        {"id":"score","type":"rating","label":"Score","scale":{"min":1,"max":5},"required":true},
+        {"id":"conf","type":"slider","label":"Confidence","min":0,"max":1,"step":0.1}]}}' \
+  localhost:8000/templates | jq '{id, name, version}'
+
+# Validation errors come back ALL AT ONCE, addressed to the author
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"schema":{"name":"bad","inputs":[{"id":"s","type":"slider","label":"no bounds"}]}}' \
+  localhost:8000/templates | jq '.detail.errors'
+#   -> ["input 's' (slider) requires both min and max"]
+
+# Edit a project's config
+curl -s -X PATCH -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"guidelines_md":"# Updated","labels_per_unit":2}' \
+  localhost:8000/projects/1 | jq '{rebound, slots_changed, k: .project.labels_per_unit}'
+
+# Role gating still holds: an annotator token cannot edit or export
+curl -s -o /dev/null -w "%{http_code}\n" -X PATCH \
+  -H "Authorization: Bearer <annotator-key>" -H "Content-Type: application/json" \
+  -d '{"guidelines_md":"nope"}' localhost:8000/projects/1     # -> 403
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "Authorization: Bearer <annotator-key>" \
+  "localhost:8000/projects/1/export?format=labels"            # -> 403
+
+# ============================================================================
+# 5. DOCS
+# ============================================================================
+# docs/extending.md — follow it end to end by adding a throwaway input type and
+# confirming the claim it makes: four places, and nothing else. The builder
+# palette should pick your type up automatically (it is derived from the widget
+# registry), and schema.test.ts should validate it without you writing a test.

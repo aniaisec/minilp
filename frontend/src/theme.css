@@ -738,3 +738,297 @@ pre.mlp-code {
 .mlp-preview-frame .mlp-app {
   min-height: unset;
 }
+
+/* =========================================================================
+   M6 — expanded field palette (§2.1) and the visual template builder (§11)
+   ========================================================================= */
+
+/* ---- shared field affordances ---- */
+.mlp-field-help {
+  font-size: 13px;
+  margin-top: -4px;
+}
+.mlp-field-hint {
+  font-size: 12px;
+}
+.mlp-option-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+select.mlp-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+}
+select.mlp-multiselect {
+  padding: 6px;
+}
+input.mlp-number {
+  max-width: 200px;
+}
+
+/* ---- slider ---- */
+.mlp-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mlp-slider {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.mlp-slider-value {
+  min-width: 3.5em;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* ---- rating (stars) ---- */
+.mlp-rating {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mlp-star {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mlp-star:hover {
+  background: var(--surface-2);
+}
+.mlp-star-on {
+  color: var(--accent);
+}
+.mlp-rating-readout {
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+/* ---- chips (tags, multiselect) ---- */
+.mlp-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mlp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.mlp-chip-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.mlp-chip-x {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+}
+
+/* ---- ranking ---- */
+.mlp-ranking {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mlp-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: grab;
+}
+.mlp-rank-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mlp-rank-dragging {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.mlp-rank-num {
+  width: 1.5em;
+  color: var(--muted);
+}
+.mlp-rank-grip {
+  color: var(--muted);
+  cursor: grab;
+}
+.mlp-rank-label {
+  flex: 1;
+}
+.mlp-rank-actions {
+  display: flex;
+  gap: 4px;
+}
+.mlp-btn-tiny {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* ---- visual template builder (§11) ---- */
+.mlp-builder {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .mlp-builder {
+    grid-template-columns: 1fr;
+  }
+}
+.mlp-palette h4 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.mlp-palette-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  cursor: grab;
+}
+.mlp-palette-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.mlp-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 60px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.mlp-canvas-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.mlp-canvas-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mlp-canvas-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.mlp-canvas-item-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.mlp-canvas-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: grab;
+}
+.mlp-canvas-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.mlp-canvas-title {
+  flex: 1;
+  font-size: 14px;
+}
+.mlp-canvas-type {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.mlp-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mlp-inspector label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.mlp-inspector input[type="text"],
+.mlp-inspector input[type="number"],
+.mlp-inspector select,
+.mlp-inspector textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+.mlp-builder-errors {
+  border-color: var(--danger);
+}
+.mlp-builder-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.mlp-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.mlp-view-toggle button {
+  padding: 6px 14px;
+  border: none;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.mlp-view-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}

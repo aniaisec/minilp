@@ -31,12 +31,24 @@ export interface DisplayBlock {
 }
 
 export type InputType =
+  // v1 (M1–M5)
   | "radio"
   | "checkbox"
   | "likert"
   | "free_text"
   | "choice_buttons"
-  | "span_select";
+  | "span_select"
+  // M6 builder palette (§2.1)
+  | "number"
+  | "select"
+  | "multiselect"
+  | "boolean"
+  | "rating"
+  | "slider"
+  | "tags"
+  | "ranking"
+  | "date"
+  | "datetime";
 
 export interface LikertScale {
   min?: number;
@@ -52,7 +64,14 @@ export interface InputField {
   allow_other?: boolean;
   required?: boolean;
   hotkeys?: "auto" | string[];
+  /** likert / rating — a labeled ordinal scale. */
   scale?: LikertScale;
+  /** number / slider — continuous bounds. */
+  min?: number;
+  max?: number;
+  step?: number;
+  /** Help text rendered under the field label. */
+  help?: string;
 }
 
 export interface VariantSpec {
@@ -346,6 +365,35 @@ export interface TemplateSample {
 }
 
 export type PayloadFormat = "json" | "tsv";
+
+// ---- M6 authoring + export (§2.5, §10) --------------------------------------
+
+/** PATCH /projects/{id} — every field optional; only what is sent changes. */
+export interface ProjectPatch {
+  name?: string;
+  description?: string | null;
+  guidelines_md?: string | null;
+  labels_per_unit?: number;
+  max_labels_per_unit?: number;
+  agreement?: Record<string, unknown> | null;
+  gold_ratio?: number;
+  lease_minutes?: number;
+  min_reputation?: number;
+  /** A schema differing from the bound template clones-and-rebinds it. */
+  template_schema?: TemplateSchema;
+}
+
+export interface ProjectPatchResult {
+  project: Project;
+  /** True when the edit cloned the template and rebound the project to the copy. */
+  rebound: boolean;
+  /** Slots added (K raised) or removed (K lowered) across the project's units. */
+  slots_changed: number;
+  template_id?: number;
+  template_version?: number;
+}
+
+export type ExportFormat = "labels" | "raw" | "preference" | "sft";
 
 // GET /annotators/{id}/report (§5, §6.2)
 export interface AnnotatorReport {

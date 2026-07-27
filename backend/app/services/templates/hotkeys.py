@@ -9,11 +9,13 @@ from typing import Any
 
 from app.services.templates.spec import (
     ARROW_KEYS,
+    BOOLEAN_LABELS,
     CHOICE_INPUT_TYPES,
     DIGIT_KEYS,
     LETTER_KEYS,
     OTHER_KEY,
     RESERVED_ACTION_KEYS,
+    SCALE_INPUT_TYPES,
 )
 
 # Human-friendly aliases accepted in explicit hotkey lists for arrow keys.
@@ -52,13 +54,22 @@ class HotkeyAssignment:
 
 
 def _option_labels(inp: dict[str, Any]) -> list[str]:
-    if inp["type"] == "likert":
+    """The hotkey-addressable labels of an input, in display order.
+
+    ``likert``/``rating`` derive theirs from the scale (``rating`` is a likert
+    skin — stars instead of numbered buttons, §2.1); ``boolean`` has two implicit
+    ones. Everything else uses its declared ``options``.
+    """
+    itype = inp["type"]
+    if itype in SCALE_INPUT_TYPES:
         scale = inp.get("scale") or {}
         if "labels" in scale:
             return list(scale["labels"])
         lo = scale.get("min", 1)
         hi = scale.get("max", 5)
         return [str(n) for n in range(lo, hi + 1)]
+    if itype == "boolean":
+        return list(BOOLEAN_LABELS)
     return list(inp.get("options", []) or [])
 
 

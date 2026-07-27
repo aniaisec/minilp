@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.services.quality.matching import MatchRule, rule_for, values_match
+from app.services.quality.matching import MatchRule, input_types, rule_for, values_match
 
 
 @dataclass
@@ -57,18 +57,24 @@ def grade_label(
     gold_expected: dict[str, Any] | None,
     value: dict[str, Any],
     agreement: dict[str, Any] | None = None,
+    template_schema: dict[str, Any] | None = None,
 ) -> GoldGrade:
     """Grade a canonical answer against a gold expectation.
 
     A graded key the annotator did not answer counts as a failure — a blank is
     not a free pass.
+
+    ``template_schema`` is optional and only supplies per-input-type default
+    match rules (a ``ranking`` key compares as an ordered sequence, §6.4); an
+    explicit project policy still wins over it.
     """
     if not gold_expected:
         return GoldGrade(graded=False, passed=True)
 
+    types = input_types(template_schema)
     grades: list[KeyGrade] = []
     for key, expected in gold_expected.items():
-        rule: MatchRule = rule_for(agreement, key)
+        rule: MatchRule = rule_for(agreement, key, types.get(key))
         actual = value.get(key, _MISSING)
         if actual is _MISSING:
             grades.append(

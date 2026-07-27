@@ -2,7 +2,8 @@
 
 A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — image classification, ratings, policy review, transcription checks, and side-by-side preference judging for RLHF/LLM evaluation — with quality controls built in from the start: gold questions, inter-annotator agreement, rater reputation, and position-bias counterbalancing for comparison tasks.
 
-> **Status:** Milestone 5 (analytics + admin). See [PLAN.md](PLAN.md) for the full roadmap.
+> **Status:** Milestone 6 — the **human-MVP release**. Authoring, export, docs and a
+> seeded demo are in; model judges (M7+) are next. See [PLAN.md](PLAN.md) for the full roadmap.
 
 ## Why
 
@@ -53,6 +54,19 @@ docker compose up --build
 
 - API: http://localhost:8000 (docs at `/docs`)
 - Frontend: http://localhost:5173
+
+The backend migrates, seeds the template gallery and **bootstraps a demo** on
+start-up, so there is nothing else to run. The container log prints ready-to-open
+URLs — annotator links for each demo project, and the admin surface:
+
+```
+http://localhost:5173/?project=1&annotator=1&key=dev-admin-key   # start labeling
+http://localhost:5173/#/admin?key=dev-admin-key                  # admin
+http://localhost:5173/#/admin/templates/new?key=dev-admin-key    # visual builder
+```
+
+Set `MINILP_BOOTSTRAP_DEMO=0` in `docker-compose.yml` for a clean install (the
+gallery is still seeded; the demo projects are not).
 
 ### Local development
 
@@ -214,6 +228,74 @@ http://localhost:5173/?annotator=<id>&key=<api-key>          # landing → pick 
 http://localhost:5173/?project=<id>&annotator=<id>&key=<key>  # straight into one
 ```
 
+### Authoring + export (M6)
+
+**A visual template builder.** `#/admin/templates/new` opens a palette of display
+blocks and input fields you drag onto a canvas, reorder by dragging (or with
+Alt+↑/↓ on a focused row — the builder is keyboard-drivable like everything else),
+and edit inline: label, options, `allow_other`, `required`, per-option hotkeys,
+per-block render options. Beside it runs the **real annotation renderer** on a
+generated sample, so layout, key badges and the `?` overlay are what an annotator
+will actually get.
+
+The builder and the JSON editor are **two views of one document**, not two
+formats — switching between them never loses work, because the JSON view is a
+serialization of the same schema the canvas manipulates. Validation runs live
+(hotkey conflicts, missing options, bad bounds) and again on the server, which
+stays authoritative.
+
+**Ten new field types** land through the §2.6 extensibility contract:
+
+| Type | Value shape | Notes |
+|---|---|---|
+| `number` | number | bounded numeric entry |
+| `slider` | number | continuous scale with a live read-out |
+| `rating` | int | stars — a `likert` skin, keys `1..N` |
+| `boolean` | bool | two-button toggle, so "no" ≠ "unanswered" |
+| `select` / `multiselect` | string / string[] | dropdowns for long option lists |
+| `tags` | string[] | free-form, folded to lower case and de-duplicated |
+| `ranking` | string[] (**ordered**) | drag to order; defaults to `ordered` matching |
+| `date` / `datetime` | ISO string | native pickers, sortable as stored |
+
+Dropdowns and rankings deliberately get **no per-option hotkeys** — they exist for
+lists long enough that per-option keys would exhaust the budget and collide with
+everything else on the page (§2.4).
+
+**One editor, three entry points (§2.5).** The same builder creates a template,
+edits a template (versioning rules apply: presentation-only edits update in place,
+schema edits bump), and edits a live project's configuration. Editing a project's
+schema **clones the template and rebinds** the project to the copy, so a template
+shared with other projects is never reshaped underneath them.
+
+**Grow a project without recreating it.** The `Configure` tab edits guidelines, K,
+agreement policy, gold ratio and thresholds; raising K opens another *balanced*
+round of slots on every unfinished unit, and lowering it past collected work is
+refused rather than silently discarding labels. The `Add tasks` tab appends a batch
+through the same upload surface (JSON/TSV/paste, per-row validation report) — with
+a gold affordance, because **a gold in an appended batch enters measurement
+immediately**: `is_gold` + `gold_expected` is all it takes, and golds stay
+indistinguishable in the UI.
+
+**Exports (§10).** Four JSONL formats from the `Export` tab or the API:
+
+```
+GET /projects/{id}/export?format=labels       one row per unit: payload, final label, provenance
+GET /projects/{id}/export?format=raw          one row per label: raw + canonical + variant + rater
+GET /projects/{id}/export?format=preference   RLHF pairs {prompt, chosen, rejected, meta}
+GET /projects/{id}/export?format=sft          {input, output} from a free-text answer
+GET /templates/{id}                           the schema the builder reads and writes
+PUT /templates/{id}                           save an edit (server applies the versioning rules)
+PATCH /projects/{id}                          edit config; a new template_schema clones-and-rebinds
+```
+
+The `labels` export **re-imports through `units:bulk` unchanged** — payload,
+`is_gold`, `gold_expected` and `priority` sit exactly where ingest looks for them,
+so an export is also a backup. `raw` keeps voided labels, flagged: a bias study
+needs to know a rater was removed, not to have their rows vanish.
+
+Adding your own field or block type: [`docs/extending.md`](docs/extending.md) —
+four places, and nothing else.
+
 ## Roadmap
 
 The full plan is in [PLAN.md](PLAN.md) (§12). Milestones land one at a time, each
@@ -227,16 +309,23 @@ green in CI before the next starts.
 | M3 | Annotation UI (template renderer, widget registry, hotkey engine, collapsible guidelines) | ✅ Done |
 | M4 | Quality subsystem (golds, reputation, agreement, consensus growth) | ✅ Done |
 | M5 | Analytics + admin (progress, bias analytics, unit browser, template gallery, project wizard, annotator landing) | ✅ Done |
-| M6 | Authoring (visual template builder — drag-and-drop fields, expanded palette; one editor for template create/edit + project edit; add tasks to a live project) + export (JSONL), `docs/extending.md`, seeded demo, README GIF | ⬜ Not started |
+| M6 | Authoring (visual template builder — drag-and-drop fields, expanded palette; one editor for template create/edit + project edit; add tasks to a live project) + export (JSONL), `docs/extending.md`, seeded demo | ✅ Done |
 | M7 | Judge orchestrator (provider abstraction, judge configs, prompts, budget caps, webhooks) | ⬜ Not started |
 | M8 | Ensembles + routing (calibration-weighted merge, pipeline stages, review queue UI, `final_labels`) | ⬜ Not started |
 | M9 | Active-learning loop (informativeness ranking, batch selection, FT-ready exports, iteration dashboard) | ⬜ Not started |
 | M10 | Marketplace (export/import template + judge-config bundles) | ⬜ Not started |
 
-**Where things stand:** the human-labeling core is complete end to end — define a
-template, create a project, upload units (`.json`/`.tsv`), label from the keyboard
-with quality controls, and watch progress, agreement and bias analytics in the
-admin UI. Model judges, ensemble merge/routing, the active-learning loop, and the
+> The README GIF listed under M6 in PLAN.md is the one deliverable still open — it
+> needs a screen recording of the demo. Everything else in the milestone has landed.
+
+**Where things stand:** M0–M6 are done — the **human-MVP release**. You can author a
+template with no code (or by hand in JSON), create a project, upload units
+(`.json`/`.tsv`/paste), label from the keyboard with gold questions, agreement,
+reputation and counterbalancing running underneath, watch progress and bias in the
+admin UI, grow the project with more tasks, and export the result as JSONL that
+re-imports cleanly.
+
+Model judges, ensemble merge/routing, the active-learning loop, and the
 shareable-bundle marketplace (M7–M10) are designed in PLAN.md but not yet built;
 the data model has carried their tables since M1 (`judge_configs`, `final_labels`,
 `webhooks`, `projects.pipeline`), so they slot in without migrations-of-migrations.

@@ -1,6 +1,7 @@
 """Project + unit-ingest endpoints (§5)."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,13 +13,16 @@ from app.schemas.api import (
     BulkIngestRequest,
     ProjectCreate,
     ProjectOut,
+    ProjectPatch,
     ProjectSummary,
     ReprioritizeRequest,
     UnitOut,
 )
 from app.services.analytics import project_roster
+from app.services.export import EXPORT_FORMATS, ExportError, iter_jsonl
 from app.services.ingest.bulk import FORMATS, ingest_report, ingest_units, parse_payload_text
-from app.services.projects import ProjectError, create_project
+from app.services.projects import ProjectError, create_project, update_project
+from app.services.templates.validation import TemplateValidationError
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -49,6 +53,67 @@ def get_project(
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
     return project
+
+
+@router.patch("/{project_id:int}")
+def patch_project(
+    project_id: int,
+    body: ProjectPatch,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Edit a live project's configuration — the third entry point of the one
+    editor (§2.5, M6): guidelines, K, agreement policy, gold ratio, thresholds.
+
+    A ``template_schema`` that differs from the bound template **clones and
+    rebinds** rather than mutating a version other projects may share; the
+    response reports the new template id so the editor can follow it.
+    """
+    try:
+        project, report = update_project(
+            db,
+            project_id,
+            template_schema=body.template_schema,
+            labels_per_unit=body.labels_per_unit,
+            max_labels_per_unit=body.max_labels_per_unit,
+            **body.plain_fields(),
+        )
+    except TemplateValidationError as e:
+        raise HTTPException(status_code=422, detail={"errors": e.errors}) from e
+    except ProjectError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {
+        "project": ProjectOut.model_validate(project).model_dump(),
+        **report,
+    }
+
+
+@router.get("/{project_id:int}/export")
+def get_export(
+    project_id: int,
+    format: str = Query(default="labels", description=f"one of {list(EXPORT_FORMATS)}"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_reviewer),
+) -> StreamingResponse:
+    """Stream a project's labels as JSONL (§10).
+
+    ``labels`` rows re-import through ``units:bulk`` unchanged, so an export is
+    also a backup. Reviewer-gated: exports carry per-annotator provenance.
+    """
+    if format not in EXPORT_FORMATS:
+        raise HTTPException(status_code=422, detail=f"format must be one of {list(EXPORT_FORMATS)}")
+    try:
+        # Materialize eagerly so an ExportError becomes a 422 rather than a
+        # truncated 200 with half a file already on the wire.
+        lines = list(iter_jsonl(db, project_id, format))
+    except ExportError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    filename = f"project-{project_id}-{format}.jsonl"
+    return StreamingResponse(
+        iter(lines),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{project_id:int}/units:bulk")

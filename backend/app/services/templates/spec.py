@@ -10,16 +10,51 @@ from typing import Any
 # Display block types (§2.1)
 DISPLAY_TYPES = ("text", "markdown", "image", "audio", "code", "html_snippet", "panel_group")
 
-# Input field types (§2.1) and their canonical value shapes (§2.3)
-INPUT_TYPES = ("radio", "checkbox", "likert", "free_text", "choice_buttons", "span_select")
+# Input field types (§2.1).
+#
+# v1 (M1-M5) — the original set:
+V1_INPUT_TYPES = ("radio", "checkbox", "likert", "free_text", "choice_buttons", "span_select")
+# M6 builder palette — each is a value shape (§2.3) plus a widget (§2.6); nothing
+# in assignment, golds, agreement or export needed to change to accept them.
+M6_INPUT_TYPES = (
+    "number",
+    "select",
+    "multiselect",
+    "boolean",
+    "rating",
+    "slider",
+    "tags",
+    "ranking",
+    "date",
+    "datetime",
+)
+INPUT_TYPES = V1_INPUT_TYPES + M6_INPUT_TYPES
 
-# Which input types present selectable options that receive hotkeys (§2.4)
-CHOICE_INPUT_TYPES = ("radio", "checkbox", "likert", "choice_buttons")
+# Which input types present selectable options that receive hotkeys (§2.4).
+# Dropdowns (select/multiselect) and ranking are deliberately *not* here: they
+# exist for long option lists, where per-option hotkeys would exhaust the key
+# budget and collide with everything else on the page.
+CHOICE_INPUT_TYPES = (
+    "radio",
+    "checkbox",
+    "likert",
+    "choice_buttons",
+    "rating",
+    "boolean",
+)
 # Which input types carry an explicit ``options`` list
-OPTION_INPUT_TYPES = ("radio", "checkbox", "choice_buttons")
+OPTION_INPUT_TYPES = ("radio", "checkbox", "choice_buttons", "select", "multiselect", "ranking")
 # Which input types may set ``allow_other``
-ALLOW_OTHER_TYPES = ("radio", "checkbox")
+ALLOW_OTHER_TYPES = ("radio", "checkbox", "select", "multiselect")
+# Which input types use the ``scale`` object (min/max/labels)
+SCALE_INPUT_TYPES = ("likert", "rating")
+# Which input types use top-level numeric ``min``/``max``/``step``
+RANGE_INPUT_TYPES = ("number", "slider")
+# ``slider`` is a bounded continuous scale — bounds are not optional for it.
+BOUNDS_REQUIRED_TYPES = ("slider",)
 
+# Canonical value shapes (§2.3). Gold matching, agreement and export all read
+# ``label.value``, so this table is the contract every new widget signs.
 VALUE_SHAPES = {
     "radio": "string",
     "checkbox": "string[]",
@@ -27,7 +62,22 @@ VALUE_SHAPES = {
     "free_text": "string",
     "choice_buttons": "string",
     "span_select": "span[]",
+    # --- M6 ---
+    "number": "number",
+    "select": "string",
+    "multiselect": "string[]",
+    "boolean": "bool",
+    "rating": "int",
+    "slider": "number",
+    "tags": "string[]",
+    "ranking": "string[]",  # ordered: position carries meaning
+    "date": "date",  # ISO-8601 'YYYY-MM-DD'
+    "datetime": "datetime",  # ISO-8601 'YYYY-MM-DDTHH:MM'
 }
+
+# Implicit option labels for ``boolean`` — the widget is a two-button toggle, so
+# it gets hotkeys like any other choice input.
+BOOLEAN_LABELS = ("Yes", "No")
 
 # Layout (§2.2)
 ARRANGEMENTS = ("stack", "split", "columns")
@@ -129,6 +179,14 @@ TEMPLATE_JSON_SCHEMA: dict[str, Any] = {
                             "labels": {"type": "array", "items": {"type": "string"}},
                         },
                     },
+                    # M6 numeric config (number, slider). Kept top-level rather
+                    # than inside ``scale`` because these are continuous bounds,
+                    # not a labeled ordinal scale.
+                    "min": {"type": "number"},
+                    "max": {"type": "number"},
+                    "step": {"type": "number", "exclusiveMinimum": 0},
+                    # Free help text rendered under the field's label.
+                    "help": {"type": "string"},
                 },
             },
         },

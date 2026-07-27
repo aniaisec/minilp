@@ -17,9 +17,12 @@ from app.services.templates.hotkeys import assign_hotkeys
 from app.services.templates.spec import (
     ALLOW_OTHER_TYPES,
     ARROW_KEYS,
+    BOUNDS_REQUIRED_TYPES,
     OPTION_INPUT_TYPES,
+    RANGE_INPUT_TYPES,
     RENDER_OPTIONS,
     RESERVED_ACTION_KEYS,
+    SCALE_INPUT_TYPES,
     TEMPLATE_JSON_SCHEMA,
     UNIT_REF_PREFIX,
 )
@@ -68,12 +71,28 @@ def _semantic_errors(schema: dict[str, Any]) -> list[str]:
         if inp.get("allow_other") and itype not in ALLOW_OTHER_TYPES:
             errors.append(f"input '{iid}' ({itype}) does not support allow_other")
 
-        if itype == "likert":
+        if itype in SCALE_INPUT_TYPES:
             scale = inp.get("scale") or {}
             if "labels" not in scale:
                 lo, hi = scale.get("min", 1), scale.get("max", 5)
                 if hi <= lo:
-                    errors.append(f"input '{iid}' likert scale max must exceed min")
+                    errors.append(f"input '{iid}' {itype} scale max must exceed min")
+        elif inp.get("scale"):
+            errors.append(f"input '{iid}' ({itype}) must not declare a scale")
+
+        # --- M6 numeric bounds (number, slider) ---
+        lo, hi, step = inp.get("min"), inp.get("max"), inp.get("step")
+        if itype not in RANGE_INPUT_TYPES:
+            for field_name, present in (("min", lo), ("max", hi), ("step", step)):
+                if present is not None:
+                    errors.append(f"input '{iid}' ({itype}) must not declare {field_name}")
+        else:
+            if itype in BOUNDS_REQUIRED_TYPES and (lo is None or hi is None):
+                errors.append(f"input '{iid}' ({itype}) requires both min and max")
+            if lo is not None and hi is not None and hi <= lo:
+                errors.append(f"input '{iid}' ({itype}) max must exceed min")
+            if step is not None and lo is not None and hi is not None and step > (hi - lo):
+                errors.append(f"input '{iid}' ({itype}) step is larger than its range")
 
         # explicit arrow keys only valid for choice_buttons
         hk = inp.get("hotkeys", "auto")

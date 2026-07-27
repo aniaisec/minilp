@@ -7,16 +7,20 @@ import type {
   Batch,
   Bias,
   Distribution,
+  ExportFormat,
   IngestReport,
   LabelOut,
   Progress,
   Project,
+  ProjectPatch,
+  ProjectPatchResult,
   ProjectSummary,
   Roster,
   SubmitRequest,
   Task,
   Template,
   TemplateSample,
+  TemplateSchema,
   UnitDetail,
   UnitSummary,
 } from "./types";
@@ -152,12 +156,60 @@ export class MiniLpClient {
     );
   }
 
+  private async patch<T>(path: string, body?: unknown): Promise<T> {
+    return this.parse<T>(
+      await fetch(`${this.baseUrl}${path}`, {
+        method: "PATCH",
+        headers: this.headers(true),
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    );
+  }
+
   listTemplates(): Promise<Template[]> {
     return this.get<Template[]>("/templates");
   }
 
   cloneTemplate(id: number, newName?: string): Promise<Template> {
     return this.post<Template>(`/templates/${id}:clone`, { new_name: newName ?? null });
+  }
+
+  // ---- M6 authoring (§2.5) -------------------------------------------------
+
+  createTemplate(schema: TemplateSchema): Promise<Template> {
+    return this.post<Template>("/templates", { schema });
+  }
+
+  /** Edit a custom template. The server applies the versioning rules (§2.5): a
+   *  presentation-only change updates in place, a schema change bumps. */
+  updateTemplate(id: number, schema: TemplateSchema): Promise<Template> {
+    return this.put<Template>(`/templates/${id}`, { schema });
+  }
+
+  /** Edit a live project's config; a differing `template_schema` clones-and-rebinds. */
+  patchProject(id: number, body: ProjectPatch): Promise<ProjectPatchResult> {
+    return this.patch<ProjectPatchResult>(`/projects/${id}`, body);
+  }
+
+  /** URL for a JSONL export (§10) — used as an href so the browser downloads it. */
+  exportUrl(projectId: number, format: ExportFormat): string {
+    return `${this.baseUrl}/projects/${projectId}/export?format=${format}`;
+  }
+
+  /** Fetch an export's text (the admin UI previews the first rows before download). */
+  async fetchExport(projectId: number, format: ExportFormat): Promise<string> {
+    const res = await fetch(this.exportUrl(projectId, format), { headers: this.headers() });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = (body && (body.detail ?? body.message)) || detail;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new ApiError(res.status, String(detail));
+    }
+    return res.text();
   }
 
   previewTemplate(id: number, payload: Record<string, unknown>): Promise<unknown> {

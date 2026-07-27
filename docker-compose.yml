@@ -19,6 +19,9 @@ services:
     build: ./backend
     environment:
       MINILP_DATABASE_URL: postgresql+psycopg://minilp:minilp@db:5432/minilp
+      # Seed demo projects on start-up so `docker compose up` is annotatable
+      # immediately (§12 M6). Idempotent; set to 0 for a clean install.
+      MINILP_BOOTSTRAP_DEMO: "1"
     ports:
       - "8000:8000"
     depends_on:

@@ -186,6 +186,76 @@ TRANSCRIPTION_CHECK: dict[str, Any] = {
     "variants": None,
 }
 
+# --- content review rubric (M6) ---
+#
+# Not one of the §3 originals: this exists so the gallery demonstrates the M6
+# palette (`rating`, `slider`, `select`, `multiselect`/`tags`, `ranking`,
+# `boolean`, `date`) in a task that plausibly wants all of them. Clone it as the
+# starting point for any rubric-shaped review job.
+CONTENT_REVIEW_RUBRIC: dict[str, Any] = {
+    "name": "content-review-rubric",
+    "version": 1,
+    "description": (
+        "Multi-criteria content review — shows the full M6 field palette: rating, "
+        "slider, dropdown, tags, ranking, yes/no and date."
+    ),
+    "layout": {"arrangement": "split", "ratio": [3, 2], "width": "xl"},
+    "display": [
+        {"type": "markdown", "source": "$unit.content", "render": {"collapsible": True}},
+        {"type": "text", "source": "$unit.context", "optional": True},
+    ],
+    "inputs": [
+        {
+            "id": "overall",
+            "type": "rating",
+            "label": "Overall quality",
+            "scale": {"min": 1, "max": 5},
+            "required": True,
+        },
+        {
+            "id": "confidence",
+            "type": "slider",
+            "label": "How confident are you?",
+            "min": 0,
+            "max": 1,
+            "step": 0.1,
+            "help": "0 = a guess, 1 = certain.",
+            "required": False,
+        },
+        {
+            "id": "audience",
+            "type": "select",
+            "label": "Best-fit audience",
+            "options": ["general", "professional", "academic", "children", "not suitable"],
+            "allow_other": True,
+            "required": True,
+        },
+        {
+            "id": "topics",
+            "type": "tags",
+            "label": "Topics",
+            "help": "Free-form; folded to lower case and de-duplicated.",
+            "required": False,
+        },
+        {
+            "id": "priorities",
+            "type": "ranking",
+            "label": "Rank what needs work most",
+            "options": ["accuracy", "clarity", "tone", "structure"],
+            "required": False,
+        },
+        {
+            "id": "escalate",
+            "type": "boolean",
+            "label": "Escalate to a human reviewer?",
+            "required": True,
+        },
+        {"id": "reviewed_on", "type": "date", "label": "Reviewed on", "required": False},
+        {"id": "notes", "type": "free_text", "label": "Notes", "required": False},
+    ],
+    "variants": None,
+}
+
 GALLERY: list[dict[str, Any]] = [
     SIDE_BY_SIDE,
     IMAGE_CLASSIFICATION,
@@ -193,6 +263,7 @@ GALLERY: list[dict[str, Any]] = [
     SUMMARY_QUALITY,
     TOXICITY_REVIEW,
     TRANSCRIPTION_CHECK,
+    CONTENT_REVIEW_RUBRIC,
 ]
 
 
