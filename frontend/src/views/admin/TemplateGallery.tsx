@@ -9,7 +9,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { MiniLpClient, TaskClient } from "../../api/client";
-import type { LabelOut, Task, Template, TemplateSample } from "../../api/types";
+import type {
+  LabelOut,
+  Task,
+  Template,
+  TemplateSample,
+  TemplateUsage,
+} from "../../api/types";
 import { Annotate } from "../Annotate";
 import { Pill } from "./widgets";
 
@@ -32,6 +38,120 @@ function previewClient(task: Task): TaskClient {
       throw new Error("no report in preview");
     },
   };
+}
+
+// Delete, with the reason it can't be deleted shown *before* the click rather
+// than after. The usage call is what makes that possible: a disabled button that
+// says "in use by 'Q3 run' (#4)" is a different experience from a live button
+// that 409s. Confirmation is a second click, not a modal — the operation is
+// refused whenever it would lose data, so the only thing left to guard against
+// is a misclick.
+function DeleteTemplate({
+  client,
+  template,
+  onDeleted,
+}: {
+  client: MiniLpClient;
+  template: Template;
+  onDeleted: (removedIds: number[]) => void;
+}) {
+  const [usage, setUsage] = useState<TemplateUsage | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [lineage, setLineage] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setConfirming(false);
+    setLineage(false);
+    setError(null);
+    setUsage(null);
+    client
+      .getTemplateUsage(template.id)
+      .then(setUsage)
+      .catch(() => setUsage(null));
+  }, [client, template.id]);
+
+  const blockers = lineage ? (usage?.lineage_projects ?? []) : (usage?.projects ?? []);
+  const blocked = blockers.length > 0;
+
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await client.deleteTemplate(template.id, lineage ? "all" : "one");
+      onDeleted(result.deleted.map((d) => d.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="mlp-actions" style={{ gap: 8 }} data-testid="template-delete">
+      {!confirming ? (
+        <button
+          className="mlp-btn mlp-btn-danger"
+          data-testid="template-delete-start"
+          disabled={blocked || usage === null}
+          title={
+            blocked
+              ? `In use by ${blockers.map((b) => `'${b.name}' (#${b.project_id})`).join(", ")}`
+              : "Delete this template version"
+          }
+          onClick={() => setConfirming(true)}
+        >
+          Delete
+        </button>
+      ) : (
+        <>
+          <span className="mlp-muted" data-testid="template-delete-prompt">
+            Delete {lineage ? `all ${usage?.versions} versions of` : `v${template.version} of`}{" "}
+            <strong>{template.name}</strong>?
+          </span>
+          <button
+            className="mlp-btn mlp-btn-danger"
+            data-testid="template-delete-confirm"
+            disabled={busy || blocked}
+            onClick={() => void run()}
+          >
+            {busy ? "Deleting…" : "Yes, delete"}
+          </button>
+          <button
+            className="mlp-btn"
+            data-testid="template-delete-cancel"
+            onClick={() => setConfirming(false)}
+          >
+            Cancel
+          </button>
+        </>
+      )}
+      {(usage?.versions ?? 1) > 1 && (
+        <label className="mlp-inline-label">
+          <input
+            type="checkbox"
+            checked={lineage}
+            data-testid="template-delete-lineage"
+            onChange={(e) => setLineage(e.target.checked)}
+          />
+          all {usage?.versions} versions
+        </label>
+      )}
+      {blocked && (
+        <span className="mlp-muted" data-testid="template-delete-blocked" style={{ fontSize: 12 }}>
+          In use by {blockers.map((b) => `${b.name} (#${b.project_id})`).join(", ")} — delete or
+          rebind {blockers.length === 1 ? "that project" : "those projects"} first.
+        </span>
+      )}
+      {error && (
+        <span className="mlp-error-text" data-testid="template-delete-error">
+          {error}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function firstVariant(template: Template): Record<string, unknown> | null {
@@ -188,10 +308,20 @@ export function TemplateGallery({
                   >
                     Use as starting point
                   </button>
+                  {selected.kind !== "builtin" && (
+                    <DeleteTemplate
+                      client={client}
+                      template={selected}
+                      onDeleted={(removedIds) => {
+                        setTemplates((ts) => ts.filter((t) => !removedIds.includes(t.id)));
+                        setSelectedId((id) => (id && removedIds.includes(id) ? null : id));
+                      }}
+                    />
+                  )}
                   {selected.kind === "builtin" && (
                     <span className="mlp-muted" style={{ fontSize: 12 }}>
                       Gallery templates are immutable — saving from the builder
-                      creates an editable copy (§2.5).
+                      creates an editable copy (§2.5). They cannot be deleted.
                     </span>
                   )}
                 </div>

@@ -7,7 +7,9 @@ first exercised in later milestones.
 from app.models.annotator import Annotator
 from app.models.batch import Batch
 from app.models.final_label import FinalLabel
+from app.models.judge_cache import JudgeCacheEntry
 from app.models.judge_config import JudgeConfig
+from app.models.judge_run import JudgeRun
 from app.models.label import Label
 from app.models.project import Project
 from app.models.reputation_event import ReputationEvent
@@ -16,12 +18,15 @@ from app.models.template import Template
 from app.models.unit import Unit
 from app.models.user import User
 from app.models.webhook import Webhook
+from app.models.webhook_delivery import WebhookDelivery
 
 __all__ = [
     "Annotator",
     "Batch",
     "FinalLabel",
+    "JudgeCacheEntry",
     "JudgeConfig",
+    "JudgeRun",
     "Label",
     "Project",
     "ReputationEvent",
@@ -30,4 +35,5 @@ __all__ = [
     "Unit",
     "User",
     "Webhook",
+    "WebhookDelivery",
 ]

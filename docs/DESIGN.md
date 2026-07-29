@@ -461,6 +461,160 @@ parsed value on every keystroke, so live validation and preview still work.
 Generalized lesson: **a control whose displayed value is derived from a lossy parse
 of its own input will eat characters** — keep the buffer, derive the value.
 
+
+## M7 — Judge orchestrator
+
+### A judge reaches work through `next_task`, not through a query of its own
+The orchestrator's loop is `next_task` → assemble → call → parse → `submit_label`.
+It could have selected open slots directly and been simpler to read. It does not,
+because every guarantee M2–M4 established lives in those two functions: `SKIP
+LOCKED` leasing, the K/n variant balance, gold injection at `gold_ratio`, the
+annotator-unit exclusion, lease expiry, server-side canonicalization, gold
+grading, reputation, consensus growth. A judge-specific query would have had to
+reimplement all of it and would have drifted from it on the first change.
+
+The evidence that this was the right call: `services/judges/` contains no
+reference to slots, variants, golds or reputation, and no file outside it grew a
+`kind == "model"` branch. "A judge fills slots respecting balance and golds" —
+the M7 acceptance criterion — is true without a line of code that makes it true.
+
+### The prompt shows positions, not items
+A judge sees the panels **in its slot's variant order**, labeled "Left"/"Right",
+and answers with a side. The obvious alternative — serialize as "Response A" /
+"Response B" and let the model answer in canonical space — is what most judge
+harnesses do, and it silently destroys the headline metric: the judge would
+answer in the same space we store, `raw` would equal `value`, and every
+order-bias figure in §9 would read exactly 0.5 by construction. Not because the
+model is unbiased, but because we never gave it a chance to be biased.
+
+Rendering positionally means the *existing* canonicalizer (`canonicalize_positional`)
+maps side → item for judges exactly as it does for humans, and
+`/analytics/bias` reports LLM order bias with confidence intervals for free. This
+is the same argument as §2.8's raw/canonical split, applied one layer out.
+
+### Prompt assembly is the fifth blinding surface
+DESIGN.md's postmortem 2 generalized "payload content is part of the blinding
+surface" and flagged that it would matter for judge prompts at scale. It does:
+`prompt.py` never emits `is_gold`, `gold_expected`, the variant dimension, the
+raw source keys (`response_a`), or a model name. A gold unit serializes
+identically to any other unit, because a judge told "this one is scored" is not
+measuring the same thing the gold is meant to measure.
+
+### The cache key includes the variant, and the prompt hash is a guard
+§4 fixes the key as `(judge_config + prompt_version, unit, variant)`. Dropping
+the variant would roughly halve spend on a side-by-side project and would
+manufacture perfect order-consistency — a cache that improves your metrics is a
+cache that is lying. Separately, the assembled prompt's SHA-256 rides along and a
+mismatch is treated as a *miss*: if the text changed while the version did not,
+answering from cache would attribute an answer to a prompt nobody sent.
+
+### Budget spend is read back from `labels`, never accumulated in memory
+`judge_spend` sums `labels.cost_usd` for the judge's annotator on the project.
+An in-process counter would be faster and would reset at exactly the moment it
+matters — a crash, a restart, a second concurrent run, a manual re-run. Caps are
+checked *before and after* each call for the same reason: checking only before
+overshoots by one call, checking only after overshoots by one call and pays for
+it.
+
+### An unknown model price is `unpriced`, not `$0.00`
+`resolve_price` returns `priced=False` for a model it has no entry for, and the
+API and UI both surface that. Falling back to zero would have been one less
+field and would have produced budget caps that never trigger, silently. The same
+instinct rejects unknown keys in `judge_configs.budget` at save time: a typo'd
+`dayly_usd` that quietly disables a cap is precisely the failure caps exist to
+prevent.
+
+### `next_task` grew an `exclude_units` argument
+Releasing a lease reopens the slot for *everyone, including the releaser* — fine
+for a human pressing skip once, an infinite loop for a judge worker that pulls in
+a tight loop. Found by `test_an_unparseable_reply_releases_the_slot_and_is_reported`,
+which asserted two attempts and got a hundred.
+
+The fix is a caller-supplied, non-persisted exclusion set rather than a new slot
+status or a "cooldown" column: the units a caller has already tried *this pass*
+is knowledge that belongs to the pass, not to the database. Nothing is written,
+so the work stays instantly available to every other worker, and the exclusion
+evaporates when the run ends. A persisted flag would have needed a reaper.
+
+### Webhook delivery is fire-and-forget *and* recorded
+§7.3 says delivery is fire-and-forget, and `emit` never raises — a judge run that
+completed its work must not report failure because a listener's endpoint is down.
+But "fire and forget" without a trace makes a webhook that has been quietly
+404ing for a week indistinguishable from one that never needed to fire, which is
+a discovery you make when the invoice arrives. Every attempt-set writes a
+`webhook_deliveries` row with the signed payload, the final status and the
+attempt count. It is also what lets "budget cap fires its webhook" be a real
+assertion about the event and its signature rather than a mock-patching exercise.
+
+The signature is HMAC over the exact serialized bytes, not over a re-encoding of
+the payload dict — a receiver that re-serialized the JSON to verify would compute
+a different digest and fail every check.
+
+### The mock provider ships in `app/`, not `tests/`
+It is a real provider class implementing the real contract. Three things need a
+judge that is deterministic, instant and free: the acceptance suite (which must
+assert on *what* was answered), `docker compose up` (requiring an API key to see
+the feature at all is a poor first five minutes), and anyone evaluating the
+orchestrator before pointing it at a paid endpoint. Determinism comes from
+hashing the prompt, so the same unit always draws the same answer and different
+units draw different ones — a stable but non-trivial distribution, enough to
+exercise agreement, golds and bias with no network.
+
+### API keys are named, never stored
+A judge config carries `params.api_key_env` — the *name* of an environment
+variable — and the key is read at call time. The config row, and therefore any
+exported M10 bundle, is shareable without carrying a credential. The judge form
+has no API-key field at all, deliberately; `JudgesPanel.test.tsx` pins that.
+
+
+### Deleting a template is three refusals and one deletion
+`DELETE /templates/{id}` refuses builtins, refuses in-use versions, and refuses a
+partial lineage. All three come from one rule: **a template is the definition of
+every label collected under it**, so it may only go away when nothing depends on
+it existing.
+
+The FK is already `ondelete="RESTRICT"`, so the database would refuse an in-use
+delete regardless. The check in the service exists to turn an `IntegrityError`
+into a sentence — "in use by 'Q3 preference run' (#4)" rather than a constraint
+name. `GET /templates/{id}/usage` exposes the same information *before* the
+click, which is why the gallery's Delete button can be disabled with the reason
+next to it instead of live-and-then-409.
+
+Builtins are refused for the reason `edit_template` already refuses them, plus
+one more: the seeder recreates the gallery on every boot, so a builtin delete
+would silently undo itself. A delete that does not stay deleted is worse than one
+that says no.
+
+The lineage delete is all-or-nothing because the alternative — delete the free
+versions, keep the used ones — leaves a template's history with holes in it and
+the caller believing the operation succeeded. It also skips builtins sharing the
+name, since the lineage query is name-based and "delete everything called X"
+quietly including a builtin X is the kind of thing that only surfaces in
+production.
+
+Soft-delete (archive) was the considered alternative. It was rejected because
+nothing else in the schema is soft-deleted, and an `archived` flag would have to
+be honoured by the gallery, the wizard, the builder, the project editor and the
+M10 bundle exporter — five places that can each forget. The refusal keeps the
+in-use case correct with no flag at all.
+
+### `/me` bridges users and annotators, and only on POST
+`users` and `annotators` are separate by design (§4): one is an access principal,
+the other a rater. Nothing needed to bridge them until an admin wanted to *try*
+the project they had just configured — they hold a user token and have no idea
+what their annotator id is, or whether they have one.
+
+`POST /me:annotator` is get-or-create and returns **200, not 201**, because the
+caller asked to *have* a rater record, not to make a second one. Two annotator
+rows for one user would split their reputation and would let them label the same
+unit twice, which the §2.7 exclusion exists to prevent. `GET /me` deliberately
+does not create: a page load must not insert rows.
+
+The admin labels **as themselves**, not in a preview mode. Their labels count,
+are attributed in the roster, and are graded against golds like anyone else's —
+which is the honest arrangement, and also the only one that does not require a
+second, unmeasured code path through submit.
+
 ## Planned (later milestones)
 - README GIF (M6) — needs a screen recording of the seeded demo; the only M6
   deliverable not landed
@@ -468,8 +622,13 @@ of its own input will eat characters** — keep the buffer, derive the value.
   plus a widget under the same contract as the M6 palette, not new plumbing
 - Escalated units are flagged (`units.escalated_at`) but there is no review queue
   to work them yet — that queue, and `final_labels`, are M8 (§7.2)
-- Judge-vs-human kappa (`?group=cross`) returns empty until M7 enrolls judges
-- Reputation as merge weight (§7.1) — the score exists, nothing consumes it yet
+- `review.queue_backlog` and `project.completed` webhooks are registerable and
+  listed in the UI, but nothing fires them until M8 owns their triggers
+- Judge runs are synchronous and bounded (default 100 slots). A background
+  worker would add queues, status polling and retries for a feature whose
+  guardrail is already "stop at the cap"; revisit if runs outgrow a request
+- Reputation as merge weight (§7.1) — judges now carry a live score, but nothing
+  consumes it as a weight until the M8 calibration-weighted merge
 - `sync_scroll` / `diff_highlight` / zoom-lightbox / syntax highlighting (M5, §2.2)
 - Playwright smoke test over the seeded demo — **pulled forward to M5** after the
   missing-routes postmortem (M4 section above)

@@ -1,6 +1,7 @@
 // Per-project admin surface (§11): tabbed between progress, the unit browser,
 // bias/analytics, the annotator roster and — from M6 — configuration, adding
-// tasks, and export.
+// tasks, and export. M7 adds Judges: enrollment, dry-run costing, runs, spend
+// against caps, and the webhook alerts that make an unattended run safe.
 
 import { useState } from "react";
 
@@ -9,16 +10,20 @@ import { AddTasksPanel } from "./AddTasksPanel";
 import { BiasPanel } from "./BiasPanel";
 import { ConfigPanel } from "./ConfigPanel";
 import { ExportPanel } from "./ExportPanel";
+import { JudgesPanel } from "./JudgesPanel";
 import { ProgressPanel } from "./ProgressPanel";
 import { RosterPanel } from "./RosterPanel";
+import { StartLabeling } from "./StartLabeling";
 import { UnitBrowser } from "./UnitBrowser";
+import { WebhooksPanel } from "./WebhooksPanel";
 
-type Tab = "progress" | "units" | "bias" | "roster" | "config" | "add" | "export";
+type Tab = "progress" | "units" | "bias" | "roster" | "judges" | "config" | "add" | "export";
 const TABS: { id: Tab; label: string }[] = [
   { id: "progress", label: "Progress" },
   { id: "units", label: "Units" },
   { id: "bias", label: "Bias & distribution" },
   { id: "roster", label: "Annotators" },
+  { id: "judges", label: "Judges" },
   { id: "config", label: "Configure" },
   { id: "add", label: "Add tasks" },
   { id: "export", label: "Export" },
@@ -32,10 +37,13 @@ const WIDE_TABS = new Set<Tab>(["config"]);
 export function ProjectView({
   client,
   projectId,
+  apiKey,
   onBack,
 }: {
   client: MiniLpClient;
   projectId: number;
+  /** Carried into the annotation-view URL so "Start labeling" needs no re-auth. */
+  apiKey: string;
   onBack: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("progress");
@@ -50,6 +58,9 @@ export function ProjectView({
           ← projects
         </button>
         <h2 style={{ margin: 0 }}>Project #{projectId}</h2>
+        <div style={{ marginLeft: "auto" }}>
+          <StartLabeling client={client} projectId={projectId} apiKey={apiKey} />
+        </div>
       </div>
 
       <div className="mlp-tabs">
@@ -69,6 +80,12 @@ export function ProjectView({
       {tab === "units" && <UnitBrowser client={client} projectId={projectId} />}
       {tab === "bias" && <BiasPanel client={client} projectId={projectId} />}
       {tab === "roster" && <RosterPanel client={client} projectId={projectId} />}
+      {tab === "judges" && (
+        <>
+          <JudgesPanel client={client} projectId={projectId} />
+          <WebhooksPanel client={client} projectId={projectId} />
+        </>
+      )}
       {tab === "config" && <ConfigPanel client={client} projectId={projectId} />}
       {tab === "add" && <AddTasksPanel client={client} projectId={projectId} />}
       {tab === "export" && <ExportPanel client={client} projectId={projectId} />}

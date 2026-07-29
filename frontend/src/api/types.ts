@@ -415,3 +415,225 @@ export interface AnnotatorReport {
   };
   events: { id: number; kind: string; delta: number; created_at: string | null }[];
 }
+
+// ---- M7 judges + webhooks (§5, §7.1, §7.3) ----------------------------------
+
+export type ProviderName = "mock" | "anthropic" | "openai" | "openai_compatible";
+
+/** POST /judges — a judge config. Note there is no api_key field: `params.
+ *  api_key_env` names an environment variable the *server* reads at call time. */
+export interface JudgeConfigCreate {
+  name: string;
+  provider: string;
+  model_id: string;
+  params?: Record<string, unknown> | null;
+  prompt_template?: string | null;
+  budget?: JudgeBudget | null;
+}
+
+export interface JudgeBudget {
+  project_usd?: number | null;
+  daily_usd?: number | null;
+  max_tokens?: number | null;
+  max_labels?: number | null;
+}
+
+export interface JudgeConfig {
+  id: number;
+  name: string;
+  provider: string;
+  model_id: string;
+  params?: Record<string, unknown> | null;
+  prompt_template?: string | null;
+  prompt_version: number;
+  budget?: JudgeBudget | null;
+}
+
+export interface JudgeSpend {
+  cost_usd: number;
+  daily_usd: number;
+  tokens: number;
+  labels: number;
+  cache_hits: number;
+}
+
+/** GET /projects/{id}/judges — enrolled judges with live spend against caps. */
+export interface EnrolledJudge {
+  judge_config_id: number;
+  annotator_id: number | null;
+  display_name: string;
+  provider: string;
+  model_id: string;
+  prompt_version: number;
+  budget?: JudgeBudget | null;
+  /** False when no price is known for the model — "$0.00" would be a lie. */
+  priced: boolean;
+  price_source: string;
+  spend: JudgeSpend | null;
+}
+
+export interface JudgeRunError {
+  stage: string;
+  unit_id?: number;
+  error: string;
+  level?: string;
+}
+
+export interface JudgeRunReport {
+  run_id: number | null;
+  project_id: number;
+  judge_config_id: number;
+  annotator_id: number | null;
+  dry_run: boolean;
+  status: string;
+  stopped_reason: string | null;
+  slots_attempted: number;
+  labels_written: number;
+  cache_hits: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
+  estimated_cost_usd: number | null;
+  errors: JudgeRunError[];
+  budget?: JudgeBudget | null;
+  webhooks_fired: number;
+}
+
+export interface JudgeRunResponse {
+  project_id: number;
+  dry_run: boolean;
+  runs: JudgeRunReport[];
+  labels_written: number;
+  cost_usd: number;
+  estimated_cost_usd: number | null;
+}
+
+/** GET /projects/{id}/judge-runs — the run history rows. */
+export interface JudgeRunRow {
+  id: number;
+  project_id: number;
+  judge_config_id: number;
+  annotator_id: number | null;
+  dry_run: boolean;
+  status: string;
+  stopped_reason: string | null;
+  slots_attempted: number;
+  labels_written: number;
+  cache_hits: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
+  estimated_cost_usd: number | null;
+  errors: JudgeRunError[] | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+// GET /projects/{id}/analytics/costs (§5)
+export interface Costs {
+  project_id: number;
+  judges: {
+    annotator_id: number;
+    display_name: string | null;
+    judge_config_id: number | null;
+    provider: string | null;
+    model_id: string | null;
+    prompt_version: number | null;
+    labels: number;
+    cost_usd: number;
+    tokens_in: number;
+    tokens_out: number;
+    cache_hits: number;
+    cache_hit_rate: number | null;
+    cost_per_label: number | null;
+    avg_latency_ms: number | null;
+    budget: JudgeBudget | null;
+  }[];
+  totals: {
+    labels: number;
+    judge_labels: number;
+    human_labels: number;
+    cost_usd: number;
+    tokens: number;
+    cache_hits: number;
+    cache_hit_rate: number | null;
+    cost_per_judge_label: number | null;
+  };
+}
+
+export type WebhookEvent =
+  | "budget.cap_reached"
+  | "gold.accuracy_dropped"
+  | "review.queue_backlog"
+  | "project.completed";
+
+export interface Webhook {
+  id: number;
+  event: string;
+  target_url: string;
+  project_id: number | null;
+  status: string;
+  /** The secret itself is never returned by the API — only whether one is set. */
+  has_secret: boolean;
+}
+
+export interface WebhookDelivery {
+  id: number;
+  webhook_id: number;
+  event: string;
+  project_id: number | null;
+  payload: Record<string, unknown>;
+  status: string;
+  attempts: number;
+  status_code: number | null;
+  error: string | null;
+  created_at: string;
+}
+
+// ---- template deletion + identity (§2.5, §5) --------------------------------
+
+export interface TemplateDeleteResult {
+  name: string;
+  count: number;
+  deleted: { id: number; name: string; version: number }[];
+}
+
+/** A project standing in the way of a delete — named, so the refusal is actionable. */
+export interface TemplateBlocker {
+  project_id: number;
+  name: string;
+  template_id: number;
+  template_version: number;
+}
+
+export interface TemplateUsage {
+  template_id: number;
+  kind: string;
+  /** False for builtins and for any version a project is bound to. */
+  deletable: boolean;
+  projects: TemplateBlocker[];
+  /** Projects on any version sharing this name — what a lineage delete must clear. */
+  lineage_projects: TemplateBlocker[];
+  versions: number;
+}
+
+// GET /me — the authenticated user and their rater record, if they have one.
+export interface Me {
+  user_id: number;
+  email: string | null;
+  role: string;
+  annotator_id: number | null;
+  display_name: string | null;
+  status: string | null;
+  reputation_score: number | null;
+}
+
+// POST /me:annotator — get-or-create; the same shape as AnnotatorOut.
+export interface AnnotatorSelf {
+  id: number;
+  kind: string;
+  display_name: string | null;
+  status: string;
+  reputation_score: number;
+  pause_reason?: string | null;
+}

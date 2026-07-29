@@ -3,13 +3,21 @@
 
 import type {
   AnnotatorReport,
+  AnnotatorSelf,
   AvailableWork,
   Batch,
   Bias,
+  Costs,
   Distribution,
+  EnrolledJudge,
   ExportFormat,
   IngestReport,
+  JudgeConfig,
+  JudgeConfigCreate,
+  JudgeRunResponse,
+  JudgeRunRow,
   LabelOut,
+  Me,
   Progress,
   Project,
   ProjectPatch,
@@ -19,10 +27,14 @@ import type {
   SubmitRequest,
   Task,
   Template,
+  TemplateDeleteResult,
   TemplateSample,
   TemplateSchema,
+  TemplateUsage,
   UnitDetail,
   UnitSummary,
+  Webhook,
+  WebhookDelivery,
 } from "./types";
 
 // The subset the annotation loop needs — lets tests inject a mock (§12 testability).
@@ -186,6 +198,32 @@ export class MiniLpClient {
     return this.put<Template>(`/templates/${id}`, { schema });
   }
 
+  /** Delete a custom template version, or its whole lineage (§2.5).
+   *
+   * Refused (409) for builtins and for any version a project is bound to — the
+   * error carries the blocking project names, which is what the gallery shows. */
+  deleteTemplate(id: number, versions: "one" | "all" = "one"): Promise<TemplateDeleteResult> {
+    return this.del<TemplateDeleteResult>(`/templates/${id}?versions=${versions}`);
+  }
+
+  /** Which projects are bound to this template — read *before* offering delete,
+   *  so the reason a template can't go is visible rather than discovered. */
+  getTemplateUsage(id: number): Promise<TemplateUsage> {
+    return this.get<TemplateUsage>(`/templates/${id}/usage`);
+  }
+
+  // ---- who am I (§5) -------------------------------------------------------
+
+  me(): Promise<Me> {
+    return this.get<Me>("/me");
+  }
+
+  /** Get — or create on first use — the annotator record for this token.
+   *  Idempotent: what turns "Start labeling" in the admin UI into a link. */
+  myAnnotator(): Promise<AnnotatorSelf> {
+    return this.post<AnnotatorSelf>("/me:annotator");
+  }
+
   /** Edit a live project's config; a differing `template_schema` clones-and-rebinds. */
   patchProject(id: number, body: ProjectPatch): Promise<ProjectPatchResult> {
     return this.patch<ProjectPatchResult>(`/projects/${id}`, body);
@@ -287,5 +325,80 @@ export class MiniLpClient {
     filter: { batch_id?: number; status?: string } = {},
   ): Promise<{ updated: number; priority: number }> {
     return this.post(`/projects/${projectId}/units:reprioritize`, { priority, ...filter });
+  }
+
+  // ---- M7 judges + webhooks (§5, §7.1, §7.3) -------------------------------
+
+  private async del<T>(path: string): Promise<T> {
+    return this.parse<T>(
+      await fetch(`${this.baseUrl}${path}`, { method: "DELETE", headers: this.headers() }),
+    );
+  }
+
+  listProviders(): Promise<{ providers: string[] }> {
+    return this.get<{ providers: string[] }>("/judges/providers");
+  }
+
+  listJudges(): Promise<JudgeConfig[]> {
+    return this.get<JudgeConfig[]>("/judges");
+  }
+
+  createJudge(body: JudgeConfigCreate): Promise<JudgeConfig> {
+    return this.post<JudgeConfig>("/judges", body);
+  }
+
+  /** Write the next prompt version. Unset fields carry forward (§4). */
+  versionJudge(id: number, changes: Partial<JudgeConfigCreate>): Promise<JudgeConfig> {
+    return this.post<JudgeConfig>(`/judges/${id}:version`, changes);
+  }
+
+  listProjectJudges(projectId: number): Promise<{ project_id: number; judges: EnrolledJudge[] }> {
+    return this.get(`/projects/${projectId}/judges`);
+  }
+
+  attachJudge(projectId: number, judgeId: number): Promise<{ annotator_id: number }> {
+    return this.post(`/projects/${projectId}/judges/${judgeId}:attach`);
+  }
+
+  detachJudge(projectId: number, judgeId: number): Promise<{ project_id: number }> {
+    return this.post(`/projects/${projectId}/judges/${judgeId}:detach`);
+  }
+
+  /** Run (or price, with `dry_run`) enrolled judges over the project's open slots. */
+  runJudges(
+    projectId: number,
+    body: { judge_config_id?: number; limit?: number; dry_run?: boolean } = {},
+  ): Promise<JudgeRunResponse> {
+    return this.post<JudgeRunResponse>(`/projects/${projectId}/judges:run`, body);
+  }
+
+  listJudgeRuns(projectId: number): Promise<JudgeRunRow[]> {
+    return this.get<JudgeRunRow[]>(`/projects/${projectId}/judge-runs`);
+  }
+
+  getCosts(projectId: number): Promise<Costs> {
+    return this.get<Costs>(`/projects/${projectId}/analytics/costs`);
+  }
+
+  listWebhooks(projectId?: number): Promise<Webhook[]> {
+    return this.get<Webhook[]>(`/webhooks${projectId === undefined ? "" : `?project=${projectId}`}`);
+  }
+
+  createWebhook(body: {
+    event: string;
+    target_url: string;
+    secret?: string | null;
+    project_id?: number | null;
+  }): Promise<Webhook> {
+    return this.post<Webhook>("/webhooks", body);
+  }
+
+  deleteWebhook(id: number): Promise<{ deleted: number }> {
+    return this.del<{ deleted: number }>(`/webhooks/${id}`);
+  }
+
+  listDeliveries(projectId?: number): Promise<WebhookDelivery[]> {
+    const q = projectId === undefined ? "" : `?project=${projectId}`;
+    return this.get<WebhookDelivery[]>(`/webhooks/deliveries${q}`);
   }
 }

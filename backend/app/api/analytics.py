@@ -1,6 +1,6 @@
 """Analytics endpoints (§5). M4 shipped the agreement half (§6.3); M5 adds
-progress (§11), variant-bias (§9) and label distribution. Judge costs arrive with
-M7.
+progress (§11), variant-bias (§9) and label distribution; M7 adds judge costs
+(§5 ``/analytics/costs``).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +15,7 @@ from app.services.analytics import (
     project_distribution,
     project_progress,
 )
+from app.services.judges import project_costs
 from app.services.quality import project_agreement
 from app.services.quality.consensus import evaluate_unit
 
@@ -123,3 +124,21 @@ def get_consensus(
             }
         )
     return {"project_id": project_id, "units": units, "count": len(units)}
+
+
+@router.get("/{project_id:int}/analytics/costs")
+def get_costs(
+    project_id: int,
+    _user: User = Depends(require_reviewer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Judge spend, cache-hit rate and $/label (§5, M7).
+
+    Reviewer-gated rather than admin-gated: deciding whether the next round runs
+    K=3 humans or K=1 human + 2 judges is a reviewer's call, and it needs this
+    number. Costs are read back from ``labels``, so they reflect what was actually
+    billed rather than what a run reported.
+    """
+    if db.get(Project, project_id) is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    return project_costs(db, project_id)

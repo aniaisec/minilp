@@ -117,8 +117,9 @@ def clean_db(engine) -> Session:
         session.execute(
             text(
                 "TRUNCATE templates, projects, batches, units, slots, labels, "
-                "final_labels, users, annotators, judge_configs, reputation_events, "
-                "webhooks RESTART IDENTITY CASCADE"
+                "final_labels, users, annotators, judge_configs, judge_runs, "
+                "judge_cache, reputation_events, webhooks, webhook_deliveries "
+                "RESTART IDENTITY CASCADE"
             )
         )
         session.commit()

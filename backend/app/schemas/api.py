@@ -219,3 +219,131 @@ class UnitPatch(BaseModel):
 
     priority: int | None = None
     void: bool = Field(default=False, description="Void valid labels and reopen slots.")
+
+
+# --- M7: judges + webhooks (§5, §7.1, §7.3) ---------------------------------
+
+
+class JudgeConfigCreate(BaseModel):
+    """Create a judge config (§4). API keys are never sent here — ``params.api_key_env``
+    names an environment variable the server reads at call time, so a config is
+    shareable (M10 bundles) without leaking anyone's credentials."""
+
+    name: str
+    provider: str = Field(description="mock | anthropic | openai | openai_compatible")
+    model_id: str
+    params: dict[str, Any] | None = Field(
+        default=None,
+        description="Provider knobs: base_url, api_key_env, temperature, max_tokens, "
+        "retries, requests_per_minute, price {input, output}.",
+    )
+    prompt_template: str | None = Field(
+        default=None,
+        description="Versioned preamble. May use {guidelines} and {task} placeholders; "
+        "without them it is prepended above the rendered task.",
+    )
+    budget: dict[str, Any] | None = Field(
+        default=None, description="Caps: project_usd, daily_usd, max_tokens, max_labels."
+    )
+
+
+class JudgeConfigVersion(BaseModel):
+    """Next version of an existing config — unset fields carry forward (§2.5 rules)."""
+
+    name: str | None = None
+    provider: str | None = None
+    model_id: str | None = None
+    params: dict[str, Any] | None = None
+    prompt_template: str | None = None
+    budget: dict[str, Any] | None = None
+
+    def changes(self) -> dict[str, Any]:
+        return self.model_dump(exclude_unset=True)
+
+
+class JudgeConfigOut(BaseModel):
+    id: int
+    name: str
+    provider: str
+    model_id: str
+    params: dict[str, Any] | None = None
+    prompt_template: str | None = None
+    prompt_version: int
+    budget: dict[str, Any] | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class JudgeRunRequest(BaseModel):
+    """Run enrolled judges over open slots (§5 ``judges:run``)."""
+
+    judge_config_id: int | None = Field(
+        default=None, description="Omit to run every judge enrolled on the project."
+    )
+    limit: int | None = Field(
+        default=None, ge=0, le=5000, description="Max slots per judge this run."
+    )
+    dry_run: bool = Field(
+        default=False, description="Assemble and price the prompts without calling the provider."
+    )
+
+
+class JudgeRunOut(BaseModel):
+    id: int
+    project_id: int
+    judge_config_id: int
+    annotator_id: int | None = None
+    dry_run: bool
+    status: str
+    stopped_reason: str | None = None
+    slots_attempted: int
+    labels_written: int
+    cache_hits: int
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+    estimated_cost_usd: float | None = None
+    errors: list[dict[str, Any]] | None = None
+    started_at: datetime
+    finished_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class WebhookCreate(BaseModel):
+    event: str = Field(
+        description="budget.cap_reached | gold.accuracy_dropped | "
+        "review.queue_backlog | project.completed"
+    )
+    target_url: str
+    secret: str | None = Field(
+        default=None, description="HMAC-SHA256 key; deliveries carry X-MiniLP-Signature."
+    )
+    project_id: int | None = Field(default=None, description="Omit for an instance-wide hook.")
+
+
+class WebhookOut(BaseModel):
+    id: int
+    event: str
+    target_url: str
+    project_id: int | None = None
+    status: str
+    # The secret itself is never returned — only whether one is set.
+    has_secret: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class WebhookDeliveryOut(BaseModel):
+    id: int
+    webhook_id: int
+    event: str
+    project_id: int | None = None
+    payload: dict[str, Any]
+    status: str
+    attempts: int
+    status_code: int | None = None
+    error: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

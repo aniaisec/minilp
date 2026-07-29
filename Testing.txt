@@ -776,3 +776,380 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 # confirming the claim it makes: four places, and nothing else. The builder
 # palette should pick your type up automatically (it is derived from the widget
 # registry), and schema.test.ts should validate it without you writing a test.
+
+
+#M7 Testing — Judge orchestrator (providers, prompts, cache, budgets, webhooks)
+# =============================================================================
+# What M7 claims, and what each section below proves:
+#   1. A judge is an annotator — it fills slots through the SAME loop humans use,
+#      so balance, golds and exclusion apply to it for free.
+#   2. LLM order bias is now measurable, because a judge answers positionally.
+#   3. You can price a run before paying for it (dry run).
+#   4. Identical calls are never paid for twice (cache).
+#   5. A budget cap is a HARD stop, and it tells someone (webhook).
+# Nothing here needs an API key: the `mock` provider is a real provider class.
+
+
+# ============================================================================
+# 0. AUTOMATED SUITE
+# ============================================================================
+cd backend
+ruff check . && ruff format --check .
+pytest                                  # 394 tests; M7 adds 119 of them
+# The M7 files specifically:
+pytest tests/test_judge_prompt.py       # prompt assembly + blinding + parsing (no DB)
+pytest tests/test_judge_providers.py    # providers, retries, rate limit, pricing, caps (no DB)
+pytest tests/test_judge_orchestrator.py # the acceptance suite (needs PostgreSQL)
+pytest tests/test_webhooks.py           # signing, retries, delivery log, gold trigger
+pytest tests/test_judges_api.py         # the HTTP surface + role gating
+
+cd ../frontend
+npm run test        # 162 tests; M7 adds 24 (JudgesPanel.test.tsx)
+npm run build       # typecheck + production build
+
+
+# ============================================================================
+# 1. START THE STACK
+# ============================================================================
+# See the GOTCHA at the top of this file first — a stale container on 8000/5173
+# will serve old code and every new route below will 404.
+docker compose up --build
+# Or locally:
+#   docker compose up -d db
+#   cd backend && alembic upgrade head && python -m app.bootstrap_demo && uvicorn app.main:app --reload
+#   cd frontend && npm run dev
+#
+# The demo bootstrap now ALSO enrols a mock judge on "Demo — Side-by-side
+# preference" and prints the M7 section of the summary. Note the project id it
+# prints (3 in a fresh database) — call it <PID> below.
+
+export K=dev-admin-key
+# PowerShell: $K = "dev-admin-key"
+
+
+# ============================================================================
+# 2. THE UI PATH — Judges tab
+# ============================================================================
+# Open the project and click the "Judges" tab:
+#     http://localhost:5173/#/admin/project/<PID>?key=dev-admin-key
+
+# --- A1) A judge is enrolled and shows its caps -----------------------------
+# You should see "demo-mock-judge v1", provider `mock`, annotator #N, 0 labels,
+# and two cap bars (project $ and labels) both empty.
+#   -> "annotator #N" is not decoration: that IS an annotators row with
+#      kind=model. Confirm it:
+#      docker compose exec db psql -U minilp -c \
+#        "SELECT id, kind, display_name, judge_config_id FROM annotators;"
+
+# --- A2) Price the run BEFORE running it ------------------------------------
+# 1. Set "Slots per run" to 25. Click "Dry run (estimate cost)".
+# 2. -> An "Estimate" card appears: an estimated cost marked "not charged",
+#      0 labels written, and N slots looked at.
+# 3. Check the Progress tab: still 0 labeled. A dry run writes NOTHING and
+#    RELEASES every slot it looked at — the run that follows must not find the
+#    queue drained.
+#    (The mock provider is free, so the estimate is $0.0000. To see a real
+#     number, create a judge with provider `anthropic`, model
+#     `claude-sonnet-4` — you do not need a key to DRY RUN it, because a dry
+#     run never calls out. That is the point of the feature.)
+
+# --- A3) Run it -------------------------------------------------------------
+# 1. Click "Run judges".
+# 2. -> "Run report": labels written, slots looked at, cache hits, and a line
+#      per judge in WORDS ("no eligible slots left" / "stopped — label cap
+#      reached"), not an enum value.
+# 3. The demo judge is capped at 2 labels, so the first run stops on the cap.
+#    -> the line reads "stopped — label cap reached".
+# 4. Click "Run judges" again -> 0 labels, still capped. The cap is a hard stop
+#    that survives across runs because spend is read back from the labels table,
+#    not from a counter in memory.
+# 5. Raise the cap to see it continue: create a new judge (below) or
+#      curl -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+#        -d '{"budget":{"max_labels":100}}' localhost:8000/judges/1:version
+#    then attach the new version and run it.
+
+# --- A4) Create your own judge ----------------------------------------------
+# 1. "New judge config…" -> name it, pick a provider.
+#    -> Picking `openai_compatible` reveals a Base URL field and nothing else
+#       changes. That is the M9 story: a fine-tuned checkpoint is this provider
+#       with a different base_url and no new code.
+#    -> There is NO API-key field anywhere on the form, deliberately. Keys are
+#       read from server-side environment variables ($ANTHROPIC_API_KEY,
+#       $OPENAI_API_KEY) at call time, so a config never carries a credential.
+# 2. Set a cap ($/project, $/day or max labels) and click "Create & enroll".
+# 3. -> it appears in the enrolled table immediately.
+
+# --- A5) Cost panel ---------------------------------------------------------
+# After a live run the "Cost" card shows judge spend, $/judge label, cache-hit
+# rate, and judge-vs-human label counts. With the mock provider every figure is
+# a legitimate $0.00 (a KNOWN zero). An unpriced model renders as "unpriced" —
+# never as $0.00, because a budget computed from a price nobody knows is not a
+# budget. To see that: create a judge on model id "some-model-nobody-has-heard-of".
+
+# --- A6) Alerts -------------------------------------------------------------
+# Below the judges table: register a webhook.
+# 1. Event "Budget cap reached", target http://127.0.0.1:9/hook (deliberately
+#    unreachable), tick "Only this project", give it a secret. Register.
+# 2. Run a capped judge until it stops.
+# 3. -> A "Delivery log" appears with status FAILED in red, 3 attempts, and a
+#      note explaining that the run still stopped at its cap but nobody was told.
+#      That is the whole reason the log exists: a webhook that has been quietly
+#      404ing looks exactly like one that never needed to fire.
+# 4. To see a SUCCESSFUL delivery, point it at anything that 200s. A one-liner:
+#      python -c "import http.server,socketserver;socketserver.TCPServer(('',9001),http.server.SimpleHTTPRequestHandler).serve_forever()"
+#    then register http://host.docker.internal:9001/ (or localhost:9001 if the
+#    backend runs locally) and run again -> status "delivered", attempts 1.
+
+
+# ============================================================================
+# 3. THE CLAIM THAT MATTERS — judge order bias is now measurable
+# ============================================================================
+# This is why the prompt shows panels in the slot's variant order and names them
+# "Left"/"Right" rather than "A"/"B".
+#
+# 1. Before any judge run, on the side-by-side project:
+curl -s -H "Authorization: Bearer $K" localhost:8000/projects/<PID>/analytics/bias | jq '.judges'
+#    -> n_positional_labels: 0. (This block has been empty since M5.)
+# 2. Run the judge. Then repeat the call.
+#    -> n_positional_labels > 0, a prefer_first_rate WITH a confidence interval,
+#       and a per-annotator bias_score — computed by the same code that measures
+#       humans, because the judge's label went through the same canonicalization.
+# 3. Inspect a judge label to see the two halves:
+docker compose exec db psql -U minilp -c \
+  "SELECT l.raw, l.value, s.variant FROM labels l JOIN slots s ON s.id = l.slot_id
+   JOIN annotators a ON a.id = l.annotator_id WHERE a.kind = 'model' LIMIT 3;"
+#    -> raw is {"choice": "Left"} (the SIDE it picked)
+#       value is {"choice": "A"} or {"choice": "B"} (the ITEM that side held)
+#       variant is {"panel_order": "AB"} or {"panel_order": "BA"}
+#    If the prompt had said "Response A" / "Response B", raw and value would be
+#    identical and every bias number would read exactly 0.5 by construction.
+
+
+# ============================================================================
+# 4. THE GUARANTEES, BY CURL
+# ============================================================================
+
+# --- The whole flow from scratch --------------------------------------------
+# Create a judge config
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"name":"my-judge","provider":"mock","model_id":"mock-1",
+       "prompt_template":"Judge carefully.","budget":{"max_labels":5}}' \
+  localhost:8000/judges | jq '{id, name, prompt_version}'
+
+# Enrol it (creates the kind=model annotator)
+curl -s -X POST -H "Authorization: Bearer $K" \
+  localhost:8000/projects/<PID>/judges/<JID>:attach | jq
+
+# Price it, then run it
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"dry_run": true, "limit": 10}' localhost:8000/projects/<PID>/judges:run \
+  | jq '{estimated_cost_usd, labels_written}'
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"limit": 10}' localhost:8000/projects/<PID>/judges:run \
+  | jq '.runs[0] | {labels_written, cost_usd, cache_hits, stopped_reason, webhooks_fired}'
+
+# Spend against caps, and the run history (estimates and live runs together)
+curl -s -H "Authorization: Bearer $K" localhost:8000/projects/<PID>/judges | jq '.judges[0].spend'
+curl -s -H "Authorization: Bearer $K" localhost:8000/projects/<PID>/judge-runs | jq '.[] | {id, dry_run, labels_written, stopped_reason}'
+curl -s -H "Authorization: Bearer $K" localhost:8000/projects/<PID>/analytics/costs | jq '.totals'
+
+# --- The cache never pays twice ---------------------------------------------
+# 1. Run a judge over some units. Note cost_usd and cache_hits (0).
+# 2. Void those units so the slots reopen:
+#      curl -X PATCH -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+#           -d '{"void": true}' localhost:8000/units/<unit-id>
+# 3. Run the SAME judge again.
+#    -> cache_hits equals the number of labels, cost_usd is 0.00, and the labels
+#       carry cache_hit = true:
+docker compose exec db psql -U minilp -c \
+  "SELECT cache_hit, cost_usd, tokens_in FROM labels WHERE cache_hit IS NOT NULL LIMIT 5;"
+# 4. Now bump the prompt version and run again -> cache_hits back to 0. A new
+#    prompt is a new judge, so reusing the old answers would be wrong:
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"prompt_template":"Judge differently."}' localhost:8000/judges/<JID>:version | jq '.prompt_version'
+# 5. Look at the cache table — variant is part of the key on purpose:
+docker compose exec db psql -U minilp -c \
+  "SELECT judge_config_id, prompt_version, unit_id, variant_key FROM judge_cache;"
+
+# --- Golds and balance apply to judges, unchanged ---------------------------
+# Run a judge on "Demo — Quality (golds + consensus)" (gold_ratio 0.5):
+#   -> the judge is served golds it cannot distinguish, is graded on them, and
+#      gets a reputation like anyone else:
+curl -s -H "Authorization: Bearer $K" localhost:8000/annotators/<judge-annotator-id>/report \
+  | jq '{kind, status, live: {gold_accuracy: .live.gold_accuracy, gold_samples: .live.gold_samples}}'
+#   -> if it answers badly enough it gets PAUSED and its labels voided, exactly
+#      like a human — and gold.accuracy_dropped fires. Nothing in the quality
+#      pipeline knows what a judge is.
+# On the side-by-side project, per-unit variant balance must survive the run:
+docker compose exec db psql -U minilp -c \
+  "SELECT unit_id, variant->>'panel_order' AS v, count(*) FROM slots
+   GROUP BY 1,2 ORDER BY 1,2;"
+#   -> exactly K/n per variant value per unit, before and after.
+
+# --- Failure handling: a judge that can't answer leaves no trace -------------
+# Make the mock provider fail every call:
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"name":"broken","provider":"mock","model_id":"mock-1",
+       "params":{"mock":{"fail_every":1},"retries":1}}' localhost:8000/judges | jq '.id'
+# attach it, run it ->
+#   labels_written: 0, status "stopped", stopped_reason "provider_error", and an
+#   errors[] entry per attempt. Then check the slots:
+docker compose exec db psql -U minilp -c "SELECT status, count(*) FROM slots GROUP BY 1;"
+#   -> every slot it touched is back to 'open', variant intact. A failed call
+#      must not strand a lease, and an unreadable reply must not become a label.
+
+# --- Role gating (§5) --------------------------------------------------------
+# Judges and webhooks are admin. Costs and run history are reviewer.
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer <reviewer-key>" \
+  localhost:8000/judges                                             # -> 403
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  -H "Authorization: Bearer <reviewer-key>" -H "Content-Type: application/json" \
+  -d '{}' localhost:8000/projects/<PID>/judges:run                  # -> 403
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer <reviewer-key>" \
+  localhost:8000/projects/<PID>/analytics/costs                     # -> 200
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer <annotator-key>" \
+  localhost:8000/projects/<PID>/analytics/costs                     # -> 403
+
+# --- Webhook signature verification -----------------------------------------
+# The signature is HMAC-SHA256 over the EXACT bytes sent (not a re-encoding of
+# the payload), so a receiver verifies like this:
+#   import hmac, hashlib
+#   expected = "sha256=" + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+#   assert hmac.compare_digest(expected, request.headers["X-MiniLP-Signature"])
+curl -s -H "Authorization: Bearer $K" localhost:8000/webhooks/deliveries \
+  | jq '.[0] | {event, status, attempts, status_code}'
+# Note that GET /webhooks NEVER returns the secret — only has_secret. A listing
+# endpoint that echoed signing keys would turn read access into forgery.
+
+
+# ============================================================================
+# 5. AGAINST A REAL PROVIDER (optional — costs money)
+# ============================================================================
+# 1. Give the backend a key. In docker-compose.yml, under the backend service:
+#      environment:
+#        ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+#    or export it before `uvicorn` when running locally.
+# 2. Create the judge — note there is still no key in the request body:
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"name":"claude-judge","provider":"anthropic","model_id":"claude-sonnet-4",
+       "params":{"temperature":0,"max_tokens":512,"requests_per_minute":30},
+       "budget":{"project_usd":1.00,"daily_usd":0.50}}' \
+  localhost:8000/judges | jq
+# 3. ALWAYS dry-run first. It calls nothing and tells you what the run will cost:
+curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"dry_run": true}' localhost:8000/projects/<PID>/judges:run | jq '.estimated_cost_usd'
+# 4. Then run with a small `limit`, and watch the cap bars in the Judges tab.
+# 5. For a LOCAL model (no key, no cost):
+#      provider "openai_compatible", params {"base_url":"http://localhost:11434/v1"}
+#      model_id whatever your server serves. Same class, same guardrails.
+
+
+#M7 addenda — deleting templates, and "start labeling" from the admin
+# =============================================================================
+
+# ============================================================================
+# 0. AUTOMATED
+# ============================================================================
+cd backend && pytest tests/test_template_delete.py tests/test_me_api.py    # 39 tests
+cd ../frontend && npm run test -- StartLabeling                            # 18 tests
+
+# ============================================================================
+# 1. DELETING TEMPLATES (§2.5)
+# ============================================================================
+# The rule: a template is the definition of every label collected under it, so
+# it only goes away when nothing depends on it existing. Three refusals.
+
+export K=dev-admin-key
+
+# --- UI ---------------------------------------------------------------------
+# Open #/admin/templates?key=dev-admin-key and click through a builtin, then a
+# clone:
+# 1. Select a BUILTIN -> no Delete button at all, and the note says gallery
+#    templates cannot be deleted (clone instead).
+# 2. Click "Use as starting point" to clone it -> the copy gets a Delete button.
+# 3. Click Delete -> it does NOT delete. It asks ("Delete v1 of <name>?") and
+#    waits for "Yes, delete". Cancel backs out. One click is a misclick; two is
+#    a decision.
+# 4. Confirm -> the template disappears from the list immediately.
+# 5. Now clone again, and create a project on the copy (#/admin/new). Come back
+#    to the gallery and select that copy:
+#    -> Delete is DISABLED, and underneath it names the blocking project:
+#       "In use by <project> (#id) — delete or rebind that project first."
+#    That is read from GET /templates/{id}/usage BEFORE you click. The reason a
+#    thing can't be deleted should be visible, not discovered via an error.
+# 6. Edit a custom template's schema in the builder so it bumps to v2. Back in
+#    the gallery an "all N versions" checkbox appears next to Delete. Tick it ->
+#    the prompt changes to "Delete all 2 versions of <name>?".
+#    If ANY version is in use, the lineage delete is blocked even when the
+#    version you have selected is free — it is all-or-nothing on purpose, so a
+#    lineage is never left with holes in it.
+
+# --- curl -------------------------------------------------------------------
+# A builtin refuses (409)
+curl -s -X DELETE -H "Authorization: Bearer $K" localhost:8000/templates/1 | jq
+
+# Clone, check usage, delete
+CID=$(curl -s -X POST -H "Authorization: Bearer $K" -H "Content-Type: application/json" \
+  -d '{"new_name":"scratch"}' localhost:8000/templates/1:clone | jq -r .id)
+curl -s -H "Authorization: Bearer $K" localhost:8000/templates/$CID/usage | jq
+curl -s -X DELETE -H "Authorization: Bearer $K" localhost:8000/templates/$CID | jq
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $K" localhost:8000/templates/$CID   # -> 404
+
+# In use -> 409 carrying the blocking projects by name
+curl -s -X DELETE -H "Authorization: Bearer $K" localhost:8000/templates/<in-use-id> | jq '.detail'
+#   {"message": "cannot delete 'busy': it is in use by 'Autumn eval' (#6)...",
+#    "blockers": [{"project_id": 6, "name": "Autumn eval", ...}]}
+
+# Whole lineage
+curl -s -X DELETE -H "Authorization: Bearer $K" "localhost:8000/templates/$CID?versions=all" | jq '.count'
+
+# Admin-only; a reviewer or annotator token is refused
+curl -s -o /dev/null -w "%{http_code}\n" -X DELETE \
+  -H "Authorization: Bearer <reviewer-key>" localhost:8000/templates/$CID    # -> 403
+
+# --- the invariant ----------------------------------------------------------
+# Nothing collected is ever put at risk. With a labeled project on a template:
+docker compose exec db psql -U minilp -c "SELECT count(*) FROM labels;"
+curl -s -X DELETE -H "Authorization: Bearer $K" localhost:8000/templates/<in-use-id> | jq -r '.detail.message'
+docker compose exec db psql -U minilp -c "SELECT count(*) FROM labels;"   # unchanged
+# The FK is ondelete=RESTRICT, so the database would refuse anyway — the check
+# in the service is what turns an IntegrityError into a sentence.
+
+# ============================================================================
+# 2. "START LABELING" FROM THE ADMIN (§11)
+# ============================================================================
+# The gap this closes: an admin holds a USER token; the annotation view wants an
+# ANNOTATOR id. Those are different things (§4), and there was previously no way
+# to get from one to the other without querying the database by hand.
+
+# --- UI ---------------------------------------------------------------------
+# 1. #/admin?key=dev-admin-key -> every project card has a "Label this →" button.
+#    Click it: you land in the annotation view on that project, already leasing a
+#    task. Clicking the card itself (not the button) still opens the project view
+#    — the button stops propagation.
+# 2. Open a project -> "Start labeling →" sits top-right of the header, next to
+#    the project title.
+# 3. "Label tasks →" in the top nav opens the task LANDING page (all projects
+#    with work) rather than one project.
+# 4. Whichever you use, the URL is
+#      /?project=<id>&annotator=<your-id>&key=<your-key>
+#    with NO #/admin hash — the hash is what App routes on, so leaving it would
+#    bounce you straight back into the admin surface.
+# 5. Submit a label. Then check the roster (Annotators tab): you are in it, with
+#    a reputation. The admin labels AS THEMSELVES — this is not a preview mode,
+#    the labels count, are attributed, and are graded against golds like anyone
+#    else's.
+
+# --- curl -------------------------------------------------------------------
+curl -s -H "Authorization: Bearer $K" localhost:8000/me | jq
+#   -> {"user_id":1,"email":"admin@local","role":"admin","annotator_id":null,...}
+#      GET never creates anything — a page load must not insert rows.
+curl -s -X POST -H "Authorization: Bearer $K" localhost:8000/me:annotator | jq
+#   -> the rater record, created on first use. 200, not 201: it is get-or-create.
+curl -s -X POST -H "Authorization: Bearer $K" localhost:8000/me:annotator | jq -r .id
+#   -> the SAME id. A user with two annotator records would split their own
+#      reputation and could label the same unit twice (§2.7).
+curl -s -H "Authorization: Bearer $K" localhost:8000/me | jq -r .annotator_id
+
+# Every role can call it — an annotator needs their own id as much as an admin:
+curl -s -H "Authorization: Bearer <annotator-key>" localhost:8000/me | jq

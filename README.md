@@ -2,8 +2,10 @@
 
 A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — image classification, ratings, policy review, transcription checks, and side-by-side preference judging for RLHF/LLM evaluation — with quality controls built in from the start: gold questions, inter-annotator agreement, rater reputation, and position-bias counterbalancing for comparison tasks.
 
-> **Status:** Milestone 6 — the **human-MVP release**. Authoring, export, docs and a
-> seeded demo are in; model judges (M7+) are next. See [PLAN.md](PLAN.md) for the full roadmap.
+> **Status:** Milestone 7 — **model judges**. The human-MVP (M0–M6) is complete and
+> LLM judges now label through the same assignment loop humans use, with dry-run
+> costing, response caching, budget caps and webhook alerts. Ensembles and the
+> human review queue (M8) are next. See [PLAN.md](PLAN.md) for the full roadmap.
 
 ## Why
 
@@ -29,22 +31,35 @@ flowchart LR
         TPL["Template engine\n(schema · validation · variants)"]
         ASSIGN["Assignment engine\n(lease · gold injection · balance)"]
         QUAL["Quality pipeline\n(golds · agreement · reputation)"]
-        ANALYTICS["Analytics\n(agreement · bias)"]
+        JUDGE["Judge orchestrator\n(prompt · cache · budget)"]
+        ANALYTICS["Analytics\n(agreement · bias · cost)"]
+        HOOKS["Webhooks\n(signed · retried · logged)"]
     end
 
     DB[(PostgreSQL)]
+    LLM["LLM providers\nAnthropic · OpenAI · local"]
 
     AV -->|"next / submit / skip"| API
-    AD -->|"templates / projects / reports"| API
+    AD -->|"templates / projects / judges / reports"| API
     API --> TPL
     API --> ASSIGN
     API --> ANALYTICS
+    API --> JUDGE
+    JUDGE -->|"the same next / submit loop"| ASSIGN
+    JUDGE <-->|"prompt / answer"| LLM
     TPL --> DB
     ASSIGN --> DB
     QUAL --> DB
     ANALYTICS --> DB
+    HOOKS --> DB
     ASSIGN -.->|"reputation gate"| QUAL
+    JUDGE -.->|"budget.cap_reached"| HOOKS
+    QUAL -.->|"gold.accuracy_dropped"| HOOKS
 ```
+
+The judge orchestrator has no privileged path into the database: it reaches work
+through the assignment engine, exactly as the annotation view does. That edge is
+the whole M7 design.
 
 ## Quickstart
 
@@ -91,7 +106,7 @@ pytest && ruff check .
 cd frontend
 npm install
 npm run dev            # dev server (proxies /api → backend)
-npm run test           # vitest: renderer, hotkeys, canonicalization, admin formatting
+npm run test           # vitest: renderer, hotkeys, canonicalization, admin formatting, judges
 npm run build          # typecheck + production build
 
 # Hooks
@@ -296,8 +311,114 @@ The `labels` export **re-imports through `units:bulk` unchanged** — payload,
 so an export is also a backup. `raw` keeps voided labels, flagged: a bias study
 needs to know a rater was removed, not to have their rows vanish.
 
+**Deleting a template.** The gallery's Delete button appears only on custom
+templates and only when nothing depends on the template existing — a template is
+the definition of every label collected under it. Builtins are refused (clone
+instead, same rule that makes them immutable to edit), and an in-use version is
+refused with the **blocking projects named**, read from
+`GET /templates/{id}/usage` *before* the click rather than discovered as a 409
+after it. `?versions=all` removes a whole lineage, all-or-nothing, so history is
+never left with holes in it.
+
+```
+DELETE /templates/{id}                        delete one version (admin)
+DELETE /templates/{id}?versions=all           delete every version of that name
+GET    /templates/{id}/usage                  which projects block a delete, and why
+```
+
 Adding your own field or block type: [`docs/extending.md`](docs/extending.md) —
 four places, and nothing else.
+
+### Model judges (M7)
+
+**A judge is an annotator.** Enrolling one creates a `kind=model` annotator, and
+from that moment the orchestrator drives the *same* `next`/`submit` loop humans
+use. Leasing, gold injection, variant balance, the annotator-unit exclusion,
+server-side canonicalization, gold grading, reputation and consensus growth all
+apply with no judge-specific branch anywhere in them. The entire M7 backend adds
+one package (`services/judges/`) and three tables; nothing in M1–M6 changed to
+accommodate it.
+
+That is not a tidiness argument, it is what buys the headline number. A judge is
+shown the panels **in its slot's variant order**, named by position ("Left" /
+"Right") exactly as a human sees them, and answers positionally. The raw answer
+keeps the side, the canonical value keeps the item — so **LLM order bias falls out
+of the same `/analytics/bias` endpoint that measures human order bias**, with
+confidence intervals, per judge. Serializing the panels as "A" and "B" would have
+made every judge look perfectly unbiased by construction.
+
+**Four providers, one small contract.** `mock`, `anthropic`, `openai`, and
+`openai_compatible` — each a thin `httpx` call, no vendor SDKs. The
+OpenAI-compatible class is the one that matters later: a local vLLM/llama.cpp
+server, or a fine-tuned checkpoint from the M9 loop, is that same class with a
+different `base_url` and no new code. API keys are **never stored** — a config
+names an environment variable the server reads at call time, so a judge config
+stays shareable (M10 bundles) without carrying credentials.
+
+The `mock` provider ships in `app/`, not `tests/`: it is deterministic (answers
+hash from the prompt), free, and offline, which is what lets the demo show the
+whole judge loop with no key and lets the acceptance suite assert on *what* a
+judge answered.
+
+**Guardrails, because unattended runs spend money.**
+
+```
+POST /judges                                 create a config (provider, model, prompt, caps)
+POST /judges/{id}:version                    next prompt version — immutable per version (§4)
+POST /projects/{id}/judges/{jid}:attach      enrol as a kind=model annotator
+POST /projects/{id}/judges:run               run — or price it first with {"dry_run": true}
+GET  /projects/{id}/judges                   enrolled judges + live spend against caps
+GET  /projects/{id}/judge-runs               run history: estimates and live runs together
+GET  /projects/{id}/analytics/costs          $/label, cache-hit rate, judge vs human volume
+POST /webhooks · GET /webhooks/deliveries    alerts + the delivery log (§7.3)
+```
+
+- **Dry run** assembles the real prompts, prices them, and releases every slot —
+  you find out a run costs $40 before it costs $40. Estimates and live runs sit
+  side by side in the history, which is the only honest way to check the estimate.
+- **Response cache** keyed on `(judge_config + prompt_version, unit, variant)`, so
+  identical calls are never paid for twice. Variant is *in* the key on purpose:
+  answering "BA" from "AB"'s cache would fabricate perfect order-consistency and
+  quietly destroy the bias metric, while looking like a saving. The assembled
+  prompt's hash is checked too — a cache that answers from a prompt nobody sent is
+  not a cache.
+- **Budget caps** (`project_usd`, `daily_usd`, `max_tokens`, `max_labels`) are
+  checked before *and* after every call and hard-stop the run. Spend is read back
+  from the `labels` table rather than a counter, so a cap survives a restart. An
+  unknown budget key is rejected at save time — a typo'd cap that silently does
+  nothing is precisely the failure caps exist to prevent.
+- **Unknown model prices report as `unpriced`, never `$0.00`.** A budget computed
+  from a price nobody knows is not a budget.
+- **Failures leave no trace but a report line.** A provider outage or an
+  unparseable reply releases the lease, so the unit returns to the pool with its
+  variant intact. A judge whose output we could not read never becomes a label.
+- **Webhooks** (`budget.cap_reached`, `gold.accuracy_dropped`) add no new trigger
+  logic — they fire off checks §6–§7 already run. Deliveries are HMAC-signed over
+  the exact bytes sent, retried with backoff, and **recorded**: a webhook that has
+  been quietly 404ing for a week otherwise looks identical to one that never
+  needed to fire.
+
+The `Judges` tab on any project does all of it — enrol, price, run, and watch
+spend against the cap — with the alert config underneath, where §7.3 argues it
+belongs.
+
+**Try it yourself, from the admin.** Every project card carries **Label this →**,
+each project header a **Start labeling →**, and the nav a **Label tasks →** for
+the whole queue. They resolve the caller's rater record on click — `users` and
+`annotators` are separate by design (§4), so an admin holding a user token
+previously had no way to find their own annotator id short of querying the
+database:
+
+```
+GET  /me                    the token holder, and their annotator id (null if none)
+POST /me:annotator          get — or create on first use — their rater record
+```
+
+`GET` never creates: a page load must not insert rows. `POST` is get-or-create
+and returns 200 rather than 201, because a user with two rater records would
+split their own reputation and could label the same unit twice. The admin labels
+**as themselves** — not a preview mode: the labels count, carry their name in the
+roster, and are graded against golds like anyone else's.
 
 ## Roadmap
 
@@ -313,36 +434,40 @@ green in CI before the next starts.
 | M4 | Quality subsystem (golds, reputation, agreement, consensus growth) | ✅ Done |
 | M5 | Analytics + admin (progress, bias analytics, unit browser, template gallery, project wizard, annotator landing) | ✅ Done |
 | M6 | Authoring (visual template builder — drag-and-drop fields, expanded palette; one editor for template create/edit + project edit; add tasks to a live project) + export (JSONL), `docs/extending.md`, seeded demo | ✅ Done |
-| M7 | Judge orchestrator (provider abstraction, judge configs, prompts, budget caps, webhooks) | ⬜ Not started |
+| M7 | Judge orchestrator (provider abstraction, judge configs, versioned prompts, response cache, budget caps, dry-run, webhooks) | ✅ Done |
 | M8 | Ensembles + routing (calibration-weighted merge, pipeline stages, review queue UI, `final_labels`) | ⬜ Not started |
 | M9 | Active-learning loop (informativeness ranking, batch selection, FT-ready exports, iteration dashboard) | ⬜ Not started |
 | M10 | Marketplace (export/import template + judge-config bundles) | ⬜ Not started |
 
 > The README GIF listed under M6 in PLAN.md is the one deliverable still open — it
-> needs a screen recording of the demo. Everything else in the milestone has landed.
+> needs a screen recording of the demo. Everything else in that milestone has landed.
 
-**Where things stand:** M0–M6 are done — the **human-MVP release**. You can author a
-template with no code (or by hand in JSON), create a project, upload units
-(`.json`/`.tsv`/paste), label from the keyboard with gold questions, agreement,
-reputation and counterbalancing running underneath, watch progress and bias in the
-admin UI, grow the project with more tasks, and export the result as JSONL that
-re-imports cleanly.
+**Where things stand:** M0–M7 are done. You can author a template with no code (or
+by hand in JSON), create a project, upload units (`.json`/`.tsv`/paste), label from
+the keyboard with gold questions, agreement, reputation and counterbalancing
+running underneath, **enrol LLM judges that label through the same loop** — priced
+before they run, capped while they run, and measured for order bias exactly like
+humans — watch progress, bias and cost in the admin UI, grow the project with more
+tasks, and export the result as JSONL that re-imports cleanly.
 
-Model judges, ensemble merge/routing, the active-learning loop, and the
-shareable-bundle marketplace (M7–M10) are designed in PLAN.md but not yet built;
-the data model has carried their tables since M1 (`judge_configs`, `final_labels`,
-`webhooks`, `projects.pipeline`), so they slot in without migrations-of-migrations.
+Ensemble merge/routing with the human review queue, the active-learning loop, and
+the shareable-bundle marketplace (M8–M10) are designed in PLAN.md but not yet
+built; the data model has carried their tables since M1 (`final_labels`,
+`projects.pipeline`), so they slot in without migrations-of-migrations.
 
 ## Repo layout
 
 ```
 MiniLP/
 ├── backend/          # FastAPI app: api/, models/, schemas/, services/
-│                     #   services/: templates, assignment, quality, analytics, ingest, auth, slots
+│                     #   services/: templates, assignment, quality, analytics, ingest, auth,
+│                     #     slots, export, judges/ (providers/, prompt, cache, budget,
+│                     #     orchestrator), webhooks/
 │                     #   alembic/ migrations · tests/ (pytest, run against real Postgres)
 ├── frontend/         # React + TS (Vite): annotation view, annotator landing, admin/ (dashboard,
-│                     #   progress, unit browser, bias, template gallery, project wizard)
+│                     #   progress, unit browser, bias, judges + costs, template gallery, wizard)
 ├── docs/             # DESIGN.md — decision log + postmortems ("why", not "what")
+│                     # extending.md — how to add a display/input type (§2.6 contract)
 ├── docker-compose.yml
 ├── Testing.txt       # manual test scripts, per milestone
 ├── PLAN.md           # full project plan (§1–§14)

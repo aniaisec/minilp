@@ -20,6 +20,7 @@ invariant holds when a failing annotator's work is voided.
 
 from __future__ import annotations
 
+import contextlib
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
@@ -385,7 +386,7 @@ def enforce_gold_threshold(
     accuracy = passes / total
     if accuracy >= cfg.gold_threshold:
         return 0
-    return pause_annotator(
+    voided = pause_annotator(
         db,
         annotator_id,
         project.id,
@@ -395,6 +396,45 @@ def enforce_gold_threshold(
         ),
         settings=cfg,
     )
+    # §7.3: the webhook fires off a check that already existed — this one. It is
+    # emitted here rather than in ``pause_annotator`` because a pause has other
+    # causes (an admin, a future policy) and "accuracy dropped" is a claim about
+    # the *measurement*, not about the pause.
+    _emit_gold_drop(db, annotator_id, project, accuracy, total, cfg.gold_threshold, voided)
+    return voided
+
+
+def _emit_gold_drop(
+    db: Session,
+    annotator_id: int,
+    project: Project,
+    accuracy: float,
+    total: int,
+    threshold: float,
+    voided: int,
+) -> None:
+    """Fire ``gold.accuracy_dropped`` — never letting delivery break the pipeline."""
+    from app.services.webhooks import emit
+
+    annotator = db.get(Annotator, annotator_id)
+    # A listener must never fail a submit — §7.3 delivery is fire-and-forget.
+    with contextlib.suppress(Exception):
+        emit(
+            db,
+            "gold.accuracy_dropped",
+            project_id=project.id,
+            payload={
+                "annotator_id": annotator_id,
+                "annotator_kind": annotator.kind if annotator else None,
+                "display_name": annotator.display_name if annotator else None,
+                "metric": {
+                    "gold_accuracy": round(accuracy, 4),
+                    "threshold": threshold,
+                    "window_size": total,
+                    "labels_voided": voided,
+                },
+            },
+        )
 
 
 def annotator_report(

@@ -147,11 +147,37 @@ checkbox answers would call `[A,B]` and `[B,A]` identical — the opposite of wh
 ranking means. It defaults to `ordered` instead. An explicit project policy still
 wins over the default.
 
-### 4. Serialize for judges (M7)
+### 4. Serialize for judges (§7.1)
 
-A judge sees the template as text. The default renders label + options, which is
-right for most types. Override when the naive rendering is lossy — an `image_region`
-answer serialized as raw coordinates tells a model nothing useful.
+A judge sees your field as one line of text in `services/judges/prompt.py`:
+
+```
+- "quality" (rating): Overall quality [required, value shape: int]
+    one of: ["1 (poor)", "2", "3", "4", "5 (excellent)"]
+```
+
+`serialize_inputs` derives that from `type`, `label`, `required`, `value_shape()`,
+and — via `_field_options` — whatever the field offers to choose from. **A type
+that carries `options`, a `scale`, or `min`/`max` needs nothing from you**: it is
+already described. Extend `_field_options` only when your type presents choices
+that live somewhere else in the schema.
+
+Two things to check before you decide you are done:
+
+**Is the naive rendering lossy?** An `image_region` answer serialized as raw
+coordinates tells a model nothing useful; that type will want its own case.
+
+**Is your type positional?** If the answer depends on *where* something was shown
+rather than *what* it was — the way `choice_buttons` does under a variant — the
+prompt must present positions, not items, and let the canonicalizer from step 3
+map back. Serializing the items directly makes the judge answer in canonical
+space, which quietly zeroes out every position-bias metric in §9. See
+`serialize_display`'s `panel_group` branch for the pattern.
+
+You do not need to add anything for the answer to come *back*: `parsing.py`
+produces `raw` in exactly the shape a browser posts, and `submit_label`
+canonicalizes it with the same code path as a human submission. Two
+canonicalizers is one too many.
 
 ---
 

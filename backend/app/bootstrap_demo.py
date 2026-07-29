@@ -17,9 +17,10 @@ import json
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Annotator, Project, Template, User
+from app.models import Annotator, JudgeConfig, Project, Template, User
 from app.services.auth.roles import hash_api_key
 from app.services.ingest.bulk import ingest_units, parse_jsonl
+from app.services.judges import attach_judge, create_judge_config
 from app.services.projects import create_project
 from app.services.templates.seed import seed_templates
 
@@ -212,6 +213,45 @@ def _make_project(
     return project
 
 
+# --- M7 judge demo (§7.1) ---------------------------------------------------
+# The demo enrolls a judge on the side-by-side project but does NOT run it: the
+# Judges tab lands populated, with "Dry run" and "Run" one click away, so the
+# orchestrator is discoverable without anyone spending money or pasting a key.
+#
+# The provider is ``mock`` — a real provider class (app/services/judges/providers/
+# mock.py), deterministic and free. Swapping it for a paid one is two fields on
+# the same form: provider + model, with the API key read from an environment
+# variable the server names, never from the database.
+DEMO_JUDGE_NAME = "demo-mock-judge"
+
+
+def _get_or_create_demo_judge(db, project: Project | None) -> JudgeConfig | None:
+    """Enroll a mock judge on ``project``. Idempotent across re-runs."""
+    if project is None:
+        return None
+    config = db.scalar(select(JudgeConfig).where(JudgeConfig.name == DEMO_JUDGE_NAME))
+    if config is None:
+        config = create_judge_config(
+            db,
+            name=DEMO_JUDGE_NAME,
+            provider="mock",
+            model_id="mock-1",
+            params={"temperature": 0.0, "max_tokens": 512},
+            prompt_template=(
+                "You are grading two candidate answers for helpfulness and accuracy.\n"
+                "Judge only what is in front of you; do not assume which came from "
+                "which system."
+            ),
+            # A cap low enough that the demo *reaches* it on the first run: the
+            # side-by-side project has 3 units and one judge may label each once,
+            # so a 2-label cap stops the run one unit short and fires
+            # budget.cap_reached (§7.3). Seeing the hard stop is the point.
+            budget={"max_labels": 2, "project_usd": 1.0},
+        )
+    attach_judge(db, project.id, config.id)
+    return config
+
+
 def main() -> None:
     db = SessionLocal()
     try:
@@ -272,6 +312,8 @@ def main() -> None:
 
         # Re-list all demo projects (including any from prior runs) for the summary.
         all_demo = db.scalars(select(Project).where(Project.name.like("Demo — %"))).all()
+        judged = next((p for p in all_demo if "Side-by-side" in p.name), None)
+        judge = _get_or_create_demo_judge(db, judged)
         db.commit()
 
         print("\n=== MiniLP demo ready ===")
@@ -298,6 +340,25 @@ def main() -> None:
             f"  curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
             f"localhost:8000/annotators/{annotator.id}/report\n"
         )
+        if judge is not None and judged is not None:
+            print("Model judges (M7, §7.1) — a mock judge is enrolled, not yet run:\n")
+            print(
+                f"  Judges tab : http://localhost:5173/#/admin/project/{judged.id}?key={ADMIN_API_KEY}"
+            )
+            print(
+                f"  Dry run    : curl -X POST -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"-H 'Content-Type: application/json' "
+                f"-d '{{\"dry_run\": true}}' localhost:8000/projects/{judged.id}/judges:run"
+            )
+            print(
+                f"  Live run   : curl -X POST -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"-H 'Content-Type: application/json' "
+                f"-d '{{}}' localhost:8000/projects/{judged.id}/judges:run"
+            )
+            print(
+                f"  Costs      : curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"localhost:8000/projects/{judged.id}/analytics/costs\n"
+            )
         if all_demo:
             print("Export (M6, §10):\n")
             print(

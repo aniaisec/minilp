@@ -15,6 +15,7 @@ lease was reclaimed from writing a second label to the same slot.
 from __future__ import annotations
 
 import math
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -122,7 +123,13 @@ def check_eligibility(db: Session, annotator: Annotator, project: Project) -> No
 # --- assignment -------------------------------------------------------------
 
 
-def _open_slot_query(annotator_id: int, project_id: int, *, is_gold: bool):
+def _open_slot_query(
+    annotator_id: int,
+    project_id: int,
+    *,
+    is_gold: bool,
+    exclude_units: Collection[int] | None = None,
+):
     """Best open slot for this annotator, of the given gold-ness, or None.
 
     Applies annotator-unit exclusion (never the same unit twice, in any variant),
@@ -135,7 +142,7 @@ def _open_slot_query(annotator_id: int, project_id: int, *, is_gold: bool):
     leased_units = select(Slot.unit_id).where(
         Slot.leased_by == annotator_id, Slot.status == "leased"
     )
-    return (
+    stmt = (
         select(Slot)
         .join(Unit, Slot.unit_id == Unit.id)
         .where(
@@ -146,7 +153,11 @@ def _open_slot_query(annotator_id: int, project_id: int, *, is_gold: bool):
             Unit.id.not_in(labeled_units),
             Unit.id.not_in(leased_units),
         )
-        .order_by(Unit.priority.desc(), Unit.created_at.asc(), Slot.id.asc())
+    )
+    if exclude_units:
+        stmt = stmt.where(Unit.id.not_in(list(exclude_units)))
+    return (
+        stmt.order_by(Unit.priority.desc(), Unit.created_at.asc(), Slot.id.asc())
         .limit(1)
         .with_for_update(skip_locked=True, of=Slot)
     )
@@ -254,11 +265,21 @@ def next_task(
     *,
     now: datetime | None = None,
     sweep: bool = True,
+    exclude_units: Collection[int] | None = None,
 ) -> Slot | None:
     """Lease and return the next slot for ``annotator_id`` in ``project_id``.
 
     Returns ``None`` when no eligible slot remains. Reclaims expired leases first
     (``sweep=True``) so abandoned work re-enters the pool before we look.
+
+    ``exclude_units`` is a caller-supplied "not this one, not right now" set, on
+    top of the permanent annotator-unit exclusion. It exists because releasing a
+    lease (``skip_task``) reopens the slot for *everyone*, including the annotator
+    who just released it — which is fine for a human pressing skip once, and an
+    infinite loop for a judge worker that pulls in a tight loop (M7, §7.1). The
+    caller passes the units it has already attempted this pass; nothing is
+    persisted, so the exclusion evaporates when the run ends and the work stays
+    available to the next caller.
     """
     now = now or _utcnow()
     project = db.get(Project, project_id)
@@ -280,7 +301,7 @@ def next_task(
     # expires. Returning the held slot (and refreshing its lease) makes a reload
     # pick up exactly where they left off, and keeps one annotator to one open
     # task at a time.
-    held = db.scalar(
+    held_stmt = (
         select(Slot)
         .join(Unit, Slot.unit_id == Unit.id)
         .where(
@@ -288,7 +309,11 @@ def next_task(
             Slot.leased_by == annotator_id,
             Unit.project_id == project_id,
         )
-        .order_by(Slot.lease_expires_at.asc().nulls_first(), Slot.id.asc())
+    )
+    if exclude_units:
+        held_stmt = held_stmt.where(Unit.id.not_in(list(exclude_units)))
+    held = db.scalar(
+        held_stmt.order_by(Slot.lease_expires_at.asc().nulls_first(), Slot.id.asc())
         .limit(1)
         .with_for_update(skip_locked=True, of=Slot)
     )
@@ -302,7 +327,9 @@ def next_task(
 
     slot: Slot | None = None
     for is_gold in (want_gold, not want_gold):  # fall back to the other pool
-        slot = db.scalar(_open_slot_query(annotator_id, project_id, is_gold=is_gold))
+        slot = db.scalar(
+            _open_slot_query(annotator_id, project_id, is_gold=is_gold, exclude_units=exclude_units)
+        )
         if slot is not None:
             break
     if slot is None:

@@ -1129,3 +1129,68 @@ input.mlp-number {
   background: var(--accent);
   color: var(--accent-contrast);
 }
+
+/* --- M7 judges panel (§7.1/§11) ------------------------------------------ */
+
+/* A label that sits beside its control rather than above it — used in the
+   judges run bar, where "Slots per run [25] [Dry run] [Run]" reads as one
+   sentence and a stacked label would break the line in three. */
+.mlp-inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mlp-inline-label input,
+.mlp-inline-label select {
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+.mlp-list {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.mlp-list li + li {
+  margin-top: 4px;
+}
+/* Alert rows in the webhook delivery log — a failed delivery has to look
+   failed, otherwise a silently-broken webhook stays silent. */
+.mlp-status-failed {
+  color: var(--danger);
+  font-weight: 600;
+}
+.mlp-status-delivered {
+  color: var(--ok, #2e7d32);
+}
+
+/* Destructive action — delete a template (§2.5). Visually distinct from every
+   other button in the admin surface, because the one thing it must never be is
+   clicked by accident on the way to something else. */
+.mlp-btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.mlp-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.mlp-btn-danger:disabled {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+/* "Label tasks →" in the admin nav: a button that has to sit among anchors
+   without looking like a stranger. Same type and spacing as .mlp-admin-link,
+   none of the button chrome. */
+.mlp-admin-link-action {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}

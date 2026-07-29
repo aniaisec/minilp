@@ -5,13 +5,17 @@ import { useEffect, useState } from "react";
 
 import type { MiniLpClient } from "../../api/client";
 import type { ProjectSummary } from "../../api/types";
+import { StartLabeling } from "./StartLabeling";
 
 export function Dashboard({
   client,
+  apiKey,
   onOpen,
   onNew,
 }: {
   client: MiniLpClient;
+  /** Carried into the annotation-view URL so "Start labeling" needs no re-auth. */
+  apiKey: string;
   onOpen: (id: number) => void;
   onNew: () => void;
 }) {
@@ -40,14 +44,39 @@ export function Dashboard({
       )}
       <div className="mlp-project-grid">
         {projects?.map((p) => (
-          <button key={p.id} className="mlp-card mlp-project-card" onClick={() => onOpen(p.id)}>
+          // A div, not a button: the card now contains its own button, and a
+          // button inside a button is invalid HTML that browsers resolve by
+          // dropping one of them — usually the one you wanted.
+          <div
+            key={p.id}
+            className="mlp-card mlp-project-card"
+            role="button"
+            tabIndex={0}
+            data-testid={`project-card-${p.id}`}
+            onClick={() => onOpen(p.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onOpen(p.id);
+              }
+            }}
+          >
             <div className="mlp-project-name">{p.name}</div>
             {p.description && <div className="mlp-muted">{p.description}</div>}
             <div className="mlp-project-meta mlp-muted">
               K={p.labels_per_unit} · golds {Math.round(p.gold_ratio * 100)}% · template #
               {p.template_id} v{p.template_version}
             </div>
-          </button>
+            <div className="mlp-actions" style={{ marginTop: 10 }}>
+              <StartLabeling
+                client={client}
+                projectId={p.id}
+                apiKey={apiKey}
+                label="Label this →"
+                className="mlp-btn"
+              />
+            </div>
+          </div>
         ))}
       </div>
     </div>

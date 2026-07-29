@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MiniLpClient } from "../../api/client";
 import { Dashboard } from "./Dashboard";
 import { ProjectView } from "./ProjectView";
+import { StartLabeling } from "./StartLabeling";
 import { TemplateGallery } from "./TemplateGallery";
 import { Wizard } from "./Wizard";
 import { TemplateEditor } from "./builder/TemplateEditor";
@@ -115,6 +116,7 @@ export function AdminApp() {
       <ProjectView
         client={client}
         projectId={Number(parts[2])}
+        apiKey={apiKey}
         onBack={() => nav("#/admin")}
       />
     );
@@ -122,6 +124,7 @@ export function AdminApp() {
     body = (
       <Dashboard
         client={client}
+        apiKey={apiKey}
         onOpen={(id) => nav(`#/admin/project/${id}`)}
         onNew={() => nav("#/admin/new")}
       />
@@ -144,6 +147,14 @@ export function AdminApp() {
           <a className="mlp-admin-link" href="#/admin/new">
             New project
           </a>
+          {apiKey && (
+            <StartLabeling
+              client={client}
+              apiKey={apiKey}
+              label="Label tasks →"
+              className="mlp-admin-link mlp-admin-link-action"
+            />
+          )}
         </div>
         <div className="mlp-admin-tools">
           <input

@@ -2,7 +2,17 @@
 
 from fastapi import FastAPI
 
-from app.api import analytics, annotators, projects, tasks, templates, units
+from app.api import (
+    analytics,
+    annotators,
+    judges,
+    me,
+    projects,
+    tasks,
+    templates,
+    units,
+    webhooks,
+)
 
 app = FastAPI(
     title="MiniLP",
@@ -16,6 +26,9 @@ app.include_router(units.router)
 app.include_router(tasks.router)
 app.include_router(annotators.router)
 app.include_router(analytics.router)
+app.include_router(judges.router)
+app.include_router(me.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/health")

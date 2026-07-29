@@ -1,6 +1,7 @@
 """Template endpoints (§5, §2.5)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin, require_annotator
@@ -16,10 +17,13 @@ from app.schemas.api import (
 from app.services.templates.preview import render_preview
 from app.services.templates.repository import (
     TemplateError,
+    TemplateInUseError,
     clone_template,
     create_template,
+    delete_template,
     edit_template,
     list_templates,
+    template_usage,
 )
 from app.services.templates.sample import SampleError, get_sample, save_sample
 from app.services.templates.validation import TemplateValidationError
@@ -80,6 +84,62 @@ def put_template(
         raise HTTPException(status_code=422, detail={"errors": e.errors}) from e
     except TemplateError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+
+
+@router.delete("/{template_id:int}")
+def delete_template_endpoint(
+    template_id: int,
+    versions: str = Query(
+        default="one",
+        description="'one' deletes just this version; 'all' deletes every version "
+        "sharing the name (all-or-nothing).",
+    ),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """Delete a custom template version, or its whole lineage (§2.5).
+
+    Refuses builtins (clone instead) and any version a project is bound to — the
+    409 body carries ``blockers`` so the caller gets the project names rather
+    than a foreign-key error. Deleting is admin-only for the same reason creating
+    is: a template is the definition of every label collected under it.
+    """
+    if versions not in ("one", "all"):
+        raise HTTPException(status_code=422, detail="versions must be 'one' or 'all'")
+    try:
+        return delete_template(db, template_id, all_versions=versions == "all")
+    except TemplateInUseError as e:
+        raise HTTPException(
+            status_code=409, detail={"message": str(e), "blockers": e.blockers}
+        ) from e
+    except TemplateError as e:
+        # "not found" is a 404; "builtin" is a refusal to act on a real row.
+        status = 404 if "not found" in str(e) else 409
+        raise HTTPException(status_code=status, detail=str(e)) from e
+
+
+@router.get("/{template_id:int}/usage")
+def get_template_usage(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_annotator),
+) -> dict:
+    """Which projects are bound to this template version.
+
+    The gallery reads it to explain *before* you click delete why the button is
+    disabled, rather than after."""
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    lineage = list(db.scalars(select(Template.id).where(Template.name == template.name)))
+    return {
+        "template_id": template_id,
+        "kind": template.kind,
+        "deletable": template.kind != "builtin" and not template_usage(db, [template_id]),
+        "projects": template_usage(db, [template_id]),
+        "lineage_projects": template_usage(db, lineage),
+        "versions": len(lineage),
+    }
 
 
 @router.get("/{template_id:int}/sample")
