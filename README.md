@@ -435,7 +435,7 @@ green in CI before the next starts.
 | M5 | Analytics + admin (progress, bias analytics, unit browser, template gallery, project wizard, annotator landing) | ✅ Done |
 | M6 | Authoring (visual template builder — drag-and-drop fields, expanded palette; one editor for template create/edit + project edit; add tasks to a live project) + export (JSONL), `docs/extending.md`, seeded demo | ✅ Done |
 | M7 | Judge orchestrator (provider abstraction, judge configs, versioned prompts, response cache, budget caps, dry-run, webhooks) | ✅ Done |
-| M8 | Ensembles + routing (calibration-weighted merge, pipeline stages, review queue UI, `final_labels`) | ⬜ Not started |
+| M8 | Ensembles + routing (calibration-weighted merge, pipeline stages, review queue UI, `final_labels`) + annotator home (card grid, exit-to-home) | ⬜ Not started |
 | M9 | Active-learning loop (informativeness ranking, batch selection, FT-ready exports, iteration dashboard) | ⬜ Not started |
 | M10 | Marketplace (export/import template + judge-config bundles) | ⬜ Not started |
 

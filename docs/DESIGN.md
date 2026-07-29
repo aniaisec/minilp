@@ -622,6 +622,15 @@ second, unmeasured code path through submit.
   plus a widget under the same contract as the M6 palette, not new plumbing
 - Escalated units are flagged (`units.escalated_at`) but there is no review queue
   to work them yet — that queue, and `final_labels`, are M8 (§7.2)
+- The annotator landing page (M5) is reachable only by *omitting* `?project=`, so
+  it is where you start rather than somewhere you can return to, and it has no
+  card view. M8 promotes it to a home screen and gives every project screen an
+  exit back to it. No new endpoint: `/tasks/available` already returns the
+  per-project counts under the same exclusion the assignment engine applies, so
+  table and cards render from one fetch and cannot disagree
+- Leaving the annotation view currently strands the held lease until it expires.
+  The exit control routes through the existing `skip` path so the slot reopens
+  immediately with its variant intact (§2.7)
 - `review.queue_backlog` and `project.completed` webhooks are registerable and
   listed in the UI, but nothing fires them until M8 owns their triggers
 - Judge runs are synchronous and bounded (default 100 slots). A background
