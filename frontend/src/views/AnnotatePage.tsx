@@ -3,16 +3,24 @@ import { useEffect, useState } from "react";
 import { MiniLpClient } from "../api/client";
 import type { Project, Template } from "../api/types";
 import { Annotate } from "./Annotate";
-import { TasksLanding } from "./TasksLanding";
+import { Home, homeUrl } from "./Home";
+import { ReviewPage } from "./ReviewPage";
 
 // Reads connection config from the URL (?project=&annotator=&key=), resolves the
 // project's template, then hands the schema to the annotation loop.
+//
+// The three states this file switches between are the three routes an annotator
+// has (M8, §11):
+//   ?annotator=&key=            → home, a place you can return to
+//   ?annotator=&key=&project=   → the annotation loop for that project
+//   ?review=1&key=              → the reviewer's queue
 function readConfig() {
   const q = new URLSearchParams(window.location.search);
   return {
     project: Number(q.get("project") ?? "0"),
     annotator: Number(q.get("annotator") ?? "0"),
     key: q.get("key") ?? "",
+    review: q.get("review") === "1",
   };
 }
 
@@ -39,9 +47,22 @@ export function AnnotatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg.project, cfg.annotator]);
 
-  // Annotator known but no project chosen → the landing page of available tasks.
+  // The reviewer's queue (M8, §7.2) — reachable without an annotator id, since
+  // reviewing is not labeling.
+  if (cfg.review) {
+    return (
+      <ReviewPage
+        client={client}
+        apiKey={cfg.key}
+        projectId={cfg.project || undefined}
+        homeHref={cfg.annotator ? homeUrl(cfg.annotator, cfg.key) : undefined}
+      />
+    );
+  }
+
+  // Annotator known but no project chosen → home (M8, §11).
   if (cfg.annotator && !cfg.project) {
-    return <TasksLanding client={client} annotator={cfg.annotator} apiKey={cfg.key} />;
+    return <Home client={client} annotator={cfg.annotator} apiKey={cfg.key} />;
   }
 
   if (!cfg.annotator) {
@@ -83,6 +104,7 @@ export function AnnotatePage() {
       projectId={cfg.project}
       schema={template.schema}
       guidelines={project.guidelines_md ?? ""}
+      homeHref={homeUrl(cfg.annotator, cfg.key)}
     />
   );
 }

@@ -1194,3 +1194,147 @@ input.mlp-number {
   cursor: pointer;
   font: inherit;
 }
+
+/* ---- M8: annotator home, exit control, review queue (§7.2, §11) ---- */
+
+/* The topbar grew a left cluster: the exit control sits beside session stats so
+   "where am I / how do I leave" reads as one group. */
+.mlp-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.mlp-btn-exit {
+  white-space: nowrap;
+}
+
+.mlp-view-toggle {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* Card grid: one card per project. `auto-fill` rather than a fixed column count
+   so the same markup is a single column on a phone and three on a desktop
+   without a media query per breakpoint (§11 "comfortable on a tablet and on a
+   phone"). */
+.mlp-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--gap);
+}
+.mlp-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mlp-project-card-off {
+  opacity: 0.72;
+}
+.mlp-project-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mlp-project-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  text-align: center;
+}
+.mlp-stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.mlp-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.mlp-fill {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.mlp-fill > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.mlp-project-card-cta {
+  margin-top: auto;
+}
+
+/* Review queue: unit on the left, proposal + votes on the right. Collapses to
+   one column below the two-column breakpoint. */
+.mlp-review-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .mlp-review-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mlp-review-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.mlp-review-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mlp-review-proposed {
+  font-size: 17px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.mlp-review-traces {
+  margin-top: 10px;
+}
+.mlp-review-trace {
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mlp-review-trace:last-child {
+  border-bottom: none;
+}
+.mlp-review-override {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mlp-json {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 10px;
+  overflow: auto;
+  max-height: 320px;
+}
+.mlp-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}

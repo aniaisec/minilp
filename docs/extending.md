@@ -228,3 +228,90 @@ id. Golds match per key (§6.1), agreement is computed per key (§6.3), consensu
 groups per key (§6.4), export emits per key (§10). None of them ask what widget
 produced the key. That is the whole trick: **the value shape is the interface**, and
 a new type is a new shape plus a way to draw it.
+
+---
+
+# Extending MiniLP — adding a routing stage
+
+The other extension point (§7.2): *"Arbitrary stage types are the extension
+point."* A project's `pipeline` names stages by string, and stages are a registry,
+so a new one is a function plus a `register_stage` call — no fork of the pipeline
+runner, no change to any project that does not name it.
+
+## The contract
+
+A stage is `(StageContext) -> StageOutcome`.
+
+```python
+from app.services.merge.pipeline import (
+    StageContext, StageOutcome, register_stage,
+)
+
+def stage_expert_review(ctx: StageContext) -> StageOutcome:
+    """Send high-value units to a named expert queue instead of the pool."""
+    # ctx.unit, ctx.project, ctx.db      — what you are deciding about
+    # ctx.spec                           — this stage's object from the pipeline
+    # ctx.proposal                       — the MergeResult, if an ensemble stage ran
+    # ctx.metrics()                      — the environment an `if` sees
+    if ctx.proposal is None:
+        return StageOutcome("skipped", detail={"reason": "nothing merged yet"})
+
+    ctx.unit.escalated_at = ctx.unit.escalated_at or ctx.now
+    ctx.unit.quality = {
+        **(ctx.unit.quality or {}),
+        "escalation_reason": "expert review",
+        "queue": ctx.spec.get("queue", "experts"),
+    }
+    ctx.db.flush()
+    return StageOutcome("escalated", stop=True, detail={"queue": ctx.spec.get("queue")})
+
+register_stage("expert_review", stage_expert_review)
+```
+
+Then a project can name it:
+
+```jsonc
+[ { "stage": "ensemble" },
+  { "stage": "auto_finalize",  "if": "consensus >= 0.95 && entropy <= 0.2" },
+  { "stage": "expert_review",  "if": "priority >= 10", "queue": "medical" },
+  { "stage": "human_review",   "else": true } ]
+```
+
+`validate_pipeline` picks the name up from the registry the moment it is
+registered, so `GET /projects/{id}/pipeline` lists it under `stages` and the save
+path accepts it — nothing else to wire.
+
+## Four rules
+
+1. **Return `stop=True` only if you decided.** Terminal stages end the run, which
+   is what makes `"else": true` on the last stage honest rather than decorative.
+2. **Report `action` accurately.** `"finalized"` and `"escalated"` are read by the
+   runner to set `RoutingResult.decision` and to fire the §7.3 webhooks; anything
+   else is recorded in the trace and treated as "did not decide".
+3. **Never touch slots.** Routing reads labels, writes at most one `final_labels`
+   row, and sets `units.escalated_at`. Slot balance (§2.7) is deliberately
+   unreachable from here — if your stage wants more labels, that is
+   `grow_then_escalate` in §6.4, not a routing stage.
+4. **Be safe to run twice.** Routing runs after every label and can be re-run over
+   a whole project. `route_unit` already refuses to re-decide a human-decided
+   unit; your stage should be idempotent for everything else.
+
+## Conditions
+
+If your stage reads an `if`, call `_gate(ctx)` (or `evaluate_condition(cond,
+ctx.metrics())`). To expose a *new* variable, add its name to
+`CONDITION_VARIABLES` and produce it in `StageContext.metrics()` — the same set is
+used by save-time validation, so a variable that exists at run time but not in
+that set would be rejected before it could ever be used.
+
+## Tests to write
+
+Mirror `backend/tests/test_merge.py`:
+
+- a unit that **should** hit your stage does, and one that shouldn't doesn't;
+- the stage is idempotent — run it twice, assert one `final_labels` row;
+- an invalid spec for it is refused by `validate_pipeline`;
+- if it escalates, the unit appears in `review_queue` with a readable reason.
+
+`backend/tests/test_merge_condition.py` already covers the grammar itself, so a
+new stage never has to re-test the parser — only the names it introduces.

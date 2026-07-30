@@ -95,14 +95,21 @@ RENDER_OPTIONS: dict[str, set[str]] = {
 }
 
 # Reserved keys (§2.4) — cannot be assigned to options.
-RESERVED_ACTION_KEYS = frozenset({"s", "g", "d", "u", "?", "enter", "escape"})
+#
+# 'x' joined the set in M8 for exit-to-home (§11). §11 notes that `Esc` is the
+# natural key for leaving and is already reserved for "clear selection", so the
+# exit key had to be "chosen without colliding" — and §2.4's mechanism for a
+# global action key is exactly this list. Reserving it here is what makes the
+# collision impossible rather than unlikely: auto-assignment never reaches for
+# it, and a template that asks for it fails validation at save time.
+RESERVED_ACTION_KEYS = frozenset({"s", "g", "d", "u", "x", "?", "enter", "escape"})
 # 'o' is reserved by auto-assignment for the allow_other "Other..." option.
 OTHER_KEY = "o"
 # Arrow key tokens usable by choice_buttons (§2.4)
 ARROW_KEYS = frozenset({"left", "right", "up", "down"})
 DIGIT_KEYS = tuple(str(d) for d in range(1, 10))
 # Letters used for secondary choice inputs, minus reserved letters.
-LETTER_KEYS = tuple(c for c in "abcefhijklmnpqrtvwxyz")  # excludes d,g,s,u,o
+LETTER_KEYS = tuple(c for c in "abcefhijklmnpqrtvwyz")  # excludes d,g,s,u,x,o
 
 UNIT_REF_PREFIX = "$unit."
 

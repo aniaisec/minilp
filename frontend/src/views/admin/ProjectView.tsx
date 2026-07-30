@@ -57,6 +57,16 @@ export function ProjectView({
         <button className="mlp-btn" onClick={onBack}>
           ← projects
         </button>
+        {/* Exit to home (M8, §11): every project screen carries a visible way
+            back to the annotator home, this one included. It resolves the
+            admin's own rater record on click, the same bridge "Start labeling"
+            uses — an admin who has never labeled still has somewhere to land. */}
+        <StartLabeling
+          client={client}
+          apiKey={apiKey}
+          label="← Home"
+          className="mlp-btn mlp-btn-exit"
+        />
         <h2 style={{ margin: 0 }}>Project #{projectId}</h2>
         <div style={{ marginLeft: "auto" }}>
           <StartLabeling client={client} projectId={projectId} apiKey={apiKey} />

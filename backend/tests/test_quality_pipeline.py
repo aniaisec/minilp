@@ -388,7 +388,9 @@ def test_agreeing_unit_neither_grows_nor_escalates(db):
     assert len(list(db.scalars(select(Slot).where(Slot.unit_id == unit.id)))) == 2
     assert unit.escalated_at is None
     assert unit.quality["action"] == "agreed"
-    assert unit.status == "labeled"
+    # A unit that agreed has stopped collecting; M8's routing pipeline then
+    # auto-finalizes it (§7.2), which is what "finalized" means here.
+    assert unit.status == "finalized"
 
 
 def test_escalate_policy_skips_growth_entirely(db):

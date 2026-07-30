@@ -2,10 +2,12 @@
 
 A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — image classification, ratings, policy review, transcription checks, and side-by-side preference judging for RLHF/LLM evaluation — with quality controls built in from the start: gold questions, inter-annotator agreement, rater reputation, and position-bias counterbalancing for comparison tasks.
 
-> **Status:** Milestone 7 — **model judges**. The human-MVP (M0–M6) is complete and
-> LLM judges now label through the same assignment loop humans use, with dry-run
-> costing, response caching, budget caps and webhook alerts. Ensembles and the
-> human review queue (M8) are next. See [PLAN.md](PLAN.md) for the full roadmap.
+> **Status:** Milestone 8 — **ensembles, routing and the review queue**. The
+> human-MVP (M0–M6) is complete, LLM judges label through the same assignment
+> loop humans use (M7), and their votes now merge into a single decided label:
+> calibration-weighted, auto-finalized when decisive, escalated to a human review
+> queue when not. Annotators get a real home screen to return to. The
+> active-learning loop (M9) is next. See [PLAN.md](PLAN.md) for the full roadmap.
 
 ## Why
 
@@ -22,7 +24,9 @@ Label collection tools tend to be either rigid single-purpose UIs or heavyweight
 ```mermaid
 flowchart LR
     subgraph Frontend["React + TS (Vite)"]
+        HOME["Annotator home\n(table · cards · exit-to-home)"]
         AV["Annotation view\n(template renderer · guidelines)"]
+        RQ["Review queue\n(proposal · votes · traces)"]
         AD["Admin\n(wizard · gallery · dashboard)"]
     end
 
@@ -32,6 +36,7 @@ flowchart LR
         ASSIGN["Assignment engine\n(lease · gold injection · balance)"]
         QUAL["Quality pipeline\n(golds · agreement · reputation)"]
         JUDGE["Judge orchestrator\n(prompt · cache · budget)"]
+        MERGE["Merge & routing\n(weighted merge · stages · final_labels)"]
         ANALYTICS["Analytics\n(agreement · bias · cost)"]
         HOOKS["Webhooks\n(signed · retried · logged)"]
     end
@@ -39,27 +44,36 @@ flowchart LR
     DB[(PostgreSQL)]
     LLM["LLM providers\nAnthropic · OpenAI · local"]
 
+    HOME -->|"available work"| API
     AV -->|"next / submit / skip"| API
+    RQ -->|"queue / approve / override"| API
     AD -->|"templates / projects / judges / reports"| API
     API --> TPL
     API --> ASSIGN
     API --> ANALYTICS
     API --> JUDGE
+    API --> MERGE
     JUDGE -->|"the same next / submit loop"| ASSIGN
     JUDGE <-->|"prompt / answer"| LLM
+    QUAL -->|"once a unit stops collecting"| MERGE
     TPL --> DB
     ASSIGN --> DB
     QUAL --> DB
+    MERGE --> DB
     ANALYTICS --> DB
     HOOKS --> DB
     ASSIGN -.->|"reputation gate"| QUAL
+    MERGE -.->|"merge weight = reputation"| QUAL
     JUDGE -.->|"budget.cap_reached"| HOOKS
     QUAL -.->|"gold.accuracy_dropped"| HOOKS
+    MERGE -.->|"review.queue_backlog · project.completed"| HOOKS
 ```
 
-The judge orchestrator has no privileged path into the database: it reaches work
-through the assignment engine, exactly as the annotation view does. That edge is
-the whole M7 design.
+Two edges carry the design. The judge orchestrator has no privileged path into the
+database: it reaches work through the assignment engine, exactly as the annotation
+view does — the whole M7 design. And merge & routing is the *tail of the quality
+pipeline*, not a service beside it: it runs when a unit stops collecting, weights
+each vote by the reputation §6.2 already maintains, and never touches slots.
 
 ## Quickstart
 
@@ -82,6 +96,10 @@ http://localhost:5173/#/admin/templates/new?key=dev-admin-key    # visual builde
 
 Set `MINILP_BOOTSTRAP_DEMO=0` in `docker-compose.yml` for a clean install (the
 gallery is still seeded; the demo projects are not).
+
+> Full operational instructions — build, test, reset the database, start each
+> piece, and what to do when one of them misbehaves — are in
+> **[docs/RUNBOOK.md](docs/RUNBOOK.md)** (PowerShell, with bash equivalents).
 
 ### Local development
 
@@ -420,6 +438,365 @@ split their own reputation and could label the same unit twice. The admin labels
 **as themselves** — not a preview mode: the labels count, carry their name in the
 roster, and are graded against golds like anyone else's.
 
+### Ensembles, routing and the review queue (M8)
+
+M7 got many raters to vote. M8 turns those votes into **one decided label**, and
+decides who decides.
+
+**The merge weight is the reputation.** §6.2 ends by saying a judge's calibration
+score doubles as its merge weight, and that is implemented literally: there is no
+second scoring system. Anything that moves reputation — gold accuracy, peer
+agreement, variant bias — moves merge weight in the same breath. Two synthetic
+judges of known accuracy (6/8 and 2/8 on a project of golds) separate cleanly, and
+on a 1–1 tie the calibrated one decides. Below §6.1's pause threshold a judge is
+removed rather than down-weighted: down-weighting is for the merely mediocre.
+
+**Routing is a document, not a code path.** A project's `pipeline` is an ordered
+list of stages, and the one that ships is §7.2's own:
+
+```jsonc
+[ { "stage": "ensemble",      "merge": "calibration_weighted" },
+  { "stage": "auto_finalize", "if": "consensus >= 0.9 && entropy <= 0.3" },
+  { "stage": "human_review",  "else": true } ]
+```
+
+Stages are a registry, so `register_stage("expert_review", …)` plus a name in a
+project's pipeline is the whole extension — no fork. Conditions are parsed by a
+~120-line grammar rather than `eval`: a pipeline arrives from the network, and
+`__import__('os')` is not a routing rule. **Unknown variables are errors, not
+silent falses** — a rule that quietly never fires is the worst possible failure
+mode, so `consensuss >= 0.9` is a 422 on the project edit, not three thousand
+units piling up in review with nothing to point at.
+
+**Consensus is the worst key, not the average.** A unit is only as decided as its
+least-decided input, and entropy is computed over *match-rule buckets* rather than
+distinct values — so a likert key declared `within ±1` treats votes of 4 and 5 as
+one answer everywhere, instead of agreeing in §6.4 and escalating in §7.2.
+
+**An override stays explainable.** `final_labels` keeps one row per unit with the
+provenance §7.2 asks for — who voted what, at which weight, in which variant — and
+a human override records the proposal it *rejected*. A year later you can see what
+the ensemble said, what the human said instead, and which judges were wrong.
+
+```
+GET  /review/queue?project=            escalated units + merged proposal + every vote
+GET  /review/{unit_id}                 one item plus its template (renders real widgets)
+POST /review/{unit_id}:decide          {"decision": "approve" | "override", "value": …}
+GET  /review/depth                     queue depth and the backlog threshold
+GET  /projects/{id}/pipeline           the routing policy, resolved (default when unset)
+PUT  /projects/{id}/pipeline           replace it — validated at save time
+POST /projects/{id}/route              re-run routing over already-collected units
+```
+
+The review queue is reviewer-role gated and built for throughput like the
+annotation view: `a` approves, `o` overrides, `n`/`p` walk the queue, and deciding
+advances. Per-judge reasoning traces sit inline — a reviewer who has to open a
+second view to find out *why* the ensemble proposed something will stop looking.
+
+Two lifecycle consequences worth stating, because both were found by the existing
+suite rather than reasoned about afterwards:
+
+- **Voiding evidence unwinds an automatic decision.** An auto-finalized unit whose
+  labels are later voided returns to collecting and its `final_labels` row goes —
+  otherwise a decision survives the disappearance of everything it was made from.
+  A *human* decision is not unwound: a reviewer's verdict is not evidence that can
+  be withdrawn by discrediting the raters underneath it.
+- **`POST /route` is safe to press twice.** Re-running never re-decides a unit a
+  human decided, and writes one `final_labels` row however often it runs.
+
+`project.completed` and `review.queue_backlog` (§7.3) fire from the ordinary
+submit path with no new trigger logic: the backlog event fires on the escalation
+that *crosses* the threshold, and again if a drained queue re-forms — a backlog
+that came back is news. Completion is announced once.
+
+### Annotator home and exit-to-home (M8)
+
+The M5 landing page became a place you can **return to**, at a stable route
+(`?annotator=&key=` with no project). It has two presentations of one list — a
+dense table and a card grid with fill bars — toggled and remembered like the theme
+and auto-submit preferences. **Both render from a single `/tasks/available`
+fetch**, which is the endpoint that already applies the assignment engine's own
+exclusion, so the cards and the rows can never disagree with each other or with
+what the annotator will actually be served. Toggling the view does not re-ask the
+server.
+
+The empty state distinguishes *"nothing exists yet"* from *"you have labeled
+everything available"* — different situations for the person reading them.
+
+Every project screen carries a visible way back: the annotation view, the review
+queue, and the per-project admin view. **Leaving releases the held lease** through
+the same `skip` path the `s` key uses, so the slot reopens immediately with its
+variant retained (§2.7) instead of sitting leased until it expires; an unsubmitted
+answer prompts first, a submitted one never blocks the exit, and a failed release
+never traps you on the page — the lease expires on its own, and being stuck in a
+project is worse.
+
+`Esc` was the natural key and was already reserved for "clear selection" (§2.4),
+so exit took **`x`** — and `x` was *added to the reserved set* on both sides of the
+wire rather than merely hoped to be free. Auto-assignment can no longer reach for
+it, and a template that asks for it fails validation at save time, which is what
+§2.4 promises about hotkey collisions.
+
+## Verifying it by hand
+
+The automated suites are the contract (`pytest` + `vitest`, both green in CI).
+This section is for driving the thing yourself — every step below is something
+you can watch happen.
+
+### 0. Bring it up
+
+```bash
+docker compose up --build
+```
+
+Wait for `=== MiniLP demo ready ===` in the backend log. It prints an admin key
+(`dev-admin-key`), an annotator id, and a URL for every surface. Everything below
+assumes `KEY=dev-admin-key`, annotator `1`, and the demo's project numbering on a
+clean database — **project 6 is "Demo — Ensemble + review queue"**, built for M8:
+two model judges that always disagree, K = max_K = 2 so there is no room to grow,
+and `min_consensus: 0.9` so nothing can auto-finalize. If your ids differ, take
+them from the log rather than from here.
+
+Running the two halves separately instead:
+
+```bash
+# Backend — http://localhost:8000, docs at /docs
+cd backend
+pip install -e ".[dev]"
+docker compose up -d db
+export MINILP_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp
+alembic upgrade head
+MINILP_BOOTSTRAP_DEMO=1 uvicorn app.main:app --reload
+
+# Frontend — http://localhost:5173, proxies /api → :8000
+cd frontend
+npm install
+npm run dev
+```
+
+### 1. Run the automated suites
+
+```bash
+# Backend (needs a real PostgreSQL — see "Local development" above)
+cd backend
+export TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test
+pytest                      # 496 tests
+pytest tests/test_merge.py tests/test_merge_condition.py tests/test_review_api.py -v   # M8 only
+ruff check .
+
+# Frontend
+cd frontend
+npm run test                # 224 tests
+npm run test -- src/views/Home.test.tsx src/views/Review.test.tsx src/views/ExitToHome.test.tsx
+npm run build               # typecheck + production build
+```
+
+### 2. Backend by hand — merge, routing, review
+
+```bash
+KEY=dev-admin-key
+AUTH="Authorization: Bearer $KEY"
+JSON="Content-Type: application/json"
+API=localhost:8000
+```
+
+**a. See the routing policy a project is running.** Unset means the shipped
+default (§7.2); `stages` and `variables` are the vocabulary a pipeline may use.
+
+```bash
+curl -s -H "$AUTH" $API/projects/6/pipeline | python -m json.tool
+# is_default: true · stages: ensemble → auto_finalize → human_review
+```
+
+**b. Prove a bad policy is refused at save time**, not silently ignored:
+
+```bash
+curl -s -X PUT -H "$AUTH" -H "$JSON" \
+  -d '{"pipeline":[{"stage":"auto_finalize","if":"consensuss >= 0.9"}]}' \
+  $API/projects/6/pipeline
+# → 422  pipeline[0]: unknown variable 'consensuss' (available: confidence, consensus, …)
+
+curl -s -X PUT -H "$AUTH" -H "$JSON" \
+  -d '{"pipeline":[{"stage":"teleport"}]}' $API/projects/6/pipeline
+# → 422  pipeline[0]: unknown stage 'teleport' (known: [auto_finalize, ensemble, human_review])
+```
+
+**c. Subscribe to the M8 events before anything happens**, so you can watch them
+fire off checks that already run rather than off new trigger logic:
+
+```bash
+curl -s -X POST -H "$AUTH" -H "$JSON" \
+  -d '{"event":"review.queue_backlog","target_url":"https://example.test/hook","project_id":6}' $API/webhooks
+curl -s -X POST -H "$AUTH" -H "$JSON" \
+  -d '{"event":"project.completed","target_url":"https://example.test/done","project_id":6}' $API/webhooks
+```
+
+**d. Run the two disagreeing judges and watch routing send every unit to review:**
+
+```bash
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{}' $API/projects/6/judges:run | python -m json.tool
+# → labels_written: 16 (8 units × 2 judges), runs: 2
+
+curl -s -H "$AUTH" $API/projects/6/progress | python -c \
+  "import sys,json;print(json.load(sys.stdin)['funnel'])"
+# → {'pending': 0, 'in_progress': 0, 'labeled': 8, 'finalized': 0, 'escalated': 8, 'total': 8}
+
+curl -s -H "$AUTH" "$API/review/queue?project=6&limit=3" | python -m json.tool
+```
+
+Each item carries the merged proposal *and* every vote behind it. The interesting
+number is the weighting: the golds on this project expect `cat`, so
+`demo-judge-cat` has earned reputation ≈ 1.00 and `demo-judge-dog` ≈ 0.30, and the
+merge proposes **`cat` at ≈ 0.77 consensus** — a weighted win, not a coin flip,
+and still short of the 0.9 needed to auto-finalize. That is calibration-weighted
+merge doing something a majority vote could not.
+
+**e. Check the backlog webhook fired on the crossing, not on every escalation:**
+
+```bash
+curl -s -H "$AUTH" "$API/webhooks/deliveries?project=6" | python -m json.tool
+# → one review.queue_backlog delivery, metric {"queue_depth": 5, "threshold": 5}
+```
+
+Deliveries are recorded whether or not they succeed (`example.test` will fail, and
+the row records the error) — a hook that has been quietly 404ing for a week
+otherwise looks identical to one that never needed to fire.
+
+**f. Decide one, and check the provenance survives.**
+
+```bash
+UNIT=$(curl -s -H "$AUTH" "$API/review/queue?project=6&limit=1" | python -c \
+  "import sys,json;print(json.load(sys.stdin)['items'][0]['unit_id'])")
+
+curl -s -X POST -H "$AUTH" -H "$JSON" \
+  -d '{"decision":"override","value":{"category":"bird"},"comment":"both judges misread it"}' \
+  $API/review/$UNIT:decide | python -m json.tool
+# → method: human_override, queue_depth drops by one
+
+curl -s -H "$AUTH" $API/review/$UNIT | python -m json.tool
+# final_label.method == "human_override"; provenance.proposal keeps what you rejected
+```
+
+Approving instead takes the proposal as it stands:
+
+```bash
+NEXT=$(curl -s -H "$AUTH" "$API/review/queue?project=6&limit=1" | python -c \
+  "import sys,json;print(json.load(sys.stdin)['items'][0]['unit_id'])")
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"decision":"approve"}' $API/review/$NEXT:decide
+# → method: human_approved, value {"category": "cat"}, confidence 0.769…
+```
+
+**g. Prove a human decision is not undone by a later automatic pass:**
+
+```bash
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"include_finalized":true}' $API/projects/6/route
+# → {"units_considered": 8, "auto_finalized": 0, "escalated": 6, "skipped": 2}
+#   the 2 skipped are the ones you decided; press it as often as you like
+curl -s -H "$AUTH" $API/review/$UNIT | grep -o '"method": "[a-z_]*"'   # still human_override
+```
+
+**h. Drain the queue and watch `project.completed` fire once:**
+
+```bash
+while UNIT=$(curl -s -H "$AUTH" "$API/review/queue?project=6&limit=1" | python -c \
+  "import sys,json;d=json.load(sys.stdin);print(d['items'][0]['unit_id'] if d['items'] else '')") \
+  && [ -n "$UNIT" ]; do
+  curl -s -o /dev/null -X POST -H "$AUTH" -H "$JSON" -d '{"decision":"approve"}' $API/review/$UNIT:decide
+done
+
+curl -s -H "$AUTH" $API/projects/6/progress | python -c \
+  "import sys,json;print(json.load(sys.stdin)['funnel'])"        # → finalized: 8
+curl -s -H "$AUTH" "$API/webhooks/deliveries?project=6" | grep -c project.completed   # → 1
+```
+
+**i. Role gating.** The queue is reviewer-gated; an annotator token is refused:
+
+```bash
+curl -s -o /dev/null -w "annotator → %{http_code}\n" \
+  -H "Authorization: Bearer some-annotator-key" $API/review/queue    # → 403
+curl -s -o /dev/null -w "admin → %{http_code}\n" -H "$AUTH" $API/review/queue  # → 200
+```
+
+Editing the policy and re-running routing stay **admin**-only, because both change
+what happens to every future unit:
+
+```bash
+curl -s -o /dev/null -w "reviewer PUT pipeline → %{http_code}\n" \
+  -X PUT -H "Authorization: Bearer some-reviewer-key" -H "$JSON" \
+  -d '{"pipeline":null}' $API/projects/6/pipeline                    # → 403
+```
+
+### 3. Frontend by hand
+
+Open the **annotator home** (this is the stable route to return to):
+
+```
+http://localhost:5173/?annotator=1&key=dev-admin-key
+```
+
+- Every project is listed with labels available, units open, and your own
+  contribution. Click **Cards** — the same numbers, as a card grid with fill bars.
+  Reload: the view you chose is still selected (it persists like the theme).
+- Narrow the window to phone width: the grid collapses to one column.
+- Compare a row's "labels needed" with `GET /tasks/available?annotator=1` — they
+  are the same fetch, so they cannot disagree.
+- A project you are blocked from shows *why* (paused, below `min_reputation`) with
+  its button disabled, rather than a mysterious empty row.
+
+**Exit-to-home, the part with a DB consequence.** Click into a project, then:
+
+1. Note the `slot_id` in the network tab from `GET /tasks/next`.
+2. Press **`x`** (or click **← Home (x)**).
+3. Check the slot went back to the pool with its variant intact:
+
+```bash
+docker compose exec db psql -U minilp -c \
+  "SELECT id, status, variant, leased_by FROM slots WHERE id = <slot_id>;"
+# → status 'open', variant unchanged, leased_by NULL
+```
+
+That is the difference between leaving and abandoning: the unit is available to
+the next annotator immediately rather than after the lease expires.
+
+- Pick an answer *without* submitting, then press `x` — you are warned before the
+  answer is discarded. Submit first and the exit never asks.
+- Keyboard-only round trip: from home, tab to a project's **Label**, `Enter`, then
+  answer with the number keys, `Enter` to submit, `x` to return. No mouse.
+
+**The review queue** (run the judges on project 6 first — step 2d — or it is
+empty, which is itself the correct behaviour):
+
+```
+http://localhost:5173/?review=1&annotator=1&key=dev-admin-key
+```
+
+(also linked from the admin nav as **Review queue**)
+
+- Each item shows the unit, the proposed answer with its consensus and entropy, a
+  vote table naming every rater with its weight and variant, and the judges'
+  reasoning traces inline. `demo-judge-cat` should carry visibly more weight than
+  `demo-judge-dog`.
+- `a` approves and moves to the next item. `n` / `p` walk the queue.
+- `o` opens the override editor, which renders the template's **real widgets** —
+  pick an answer, add a note, `Enter` to save. `Esc` cancels. `a` deliberately
+  does *not* approve while the override is open.
+- Decide the last escalated unit and watch the depth counter reach 0; the queue
+  then shows an empty state that explains what would put something in it.
+
+### 4. What "green" should look like
+
+| Check | Expectation |
+|---|---|
+| `pytest` | 496 passed, 0 failed |
+| `ruff check .` | All checks passed |
+| `npm run test` | 224 passed (16 files) |
+| `npm run build` | typecheck clean, bundle written |
+| `docker compose up` | `=== MiniLP demo ready ===`, annotatable in under two minutes |
+| step 2d | funnel `escalated: 8`, review depth 8 |
+| step 2d | proposal `cat` at ≈ 0.77 — weights 1.00 vs 0.30, not a coin flip |
+| step 2g | `skipped` equals the number of units you decided by hand |
+| step 2h | funnel `finalized: 8`, exactly one `project.completed` delivery |
+
 ## Roadmap
 
 The full plan is in [PLAN.md](PLAN.md) (§12). Milestones land one at a time, each
@@ -435,25 +812,26 @@ green in CI before the next starts.
 | M5 | Analytics + admin (progress, bias analytics, unit browser, template gallery, project wizard, annotator landing) | ✅ Done |
 | M6 | Authoring (visual template builder — drag-and-drop fields, expanded palette; one editor for template create/edit + project edit; add tasks to a live project) + export (JSONL), `docs/extending.md`, seeded demo | ✅ Done |
 | M7 | Judge orchestrator (provider abstraction, judge configs, versioned prompts, response cache, budget caps, dry-run, webhooks) | ✅ Done |
-| M8 | Ensembles + routing (calibration-weighted merge, pipeline stages, review queue UI, `final_labels`) + annotator home (card grid, exit-to-home) | ⬜ Not started |
+| M8 | Ensembles + routing (calibration-weighted merge, declarative pipeline stages, auto-finalize, review queue UI, `final_labels` provenance) + annotator home (card grid, exit-to-home) | ✅ Done |
 | M9 | Active-learning loop (informativeness ranking, batch selection, FT-ready exports, iteration dashboard) | ⬜ Not started |
 | M10 | Marketplace (export/import template + judge-config bundles) | ⬜ Not started |
 
 > The README GIF listed under M6 in PLAN.md is the one deliverable still open — it
 > needs a screen recording of the demo. Everything else in that milestone has landed.
 
-**Where things stand:** M0–M7 are done. You can author a template with no code (or
+**Where things stand:** M0–M8 are done. You can author a template with no code (or
 by hand in JSON), create a project, upload units (`.json`/`.tsv`/paste), label from
 the keyboard with gold questions, agreement, reputation and counterbalancing
 running underneath, **enrol LLM judges that label through the same loop** — priced
 before they run, capped while they run, and measured for order bias exactly like
-humans — watch progress, bias and cost in the admin UI, grow the project with more
-tasks, and export the result as JSONL that re-imports cleanly.
+humans — **merge every vote into one decided label**, auto-finalizing the clear
+cases and routing the rest to a keyboard-driven human review queue, watch progress,
+bias and cost in the admin UI, grow the project with more tasks, and export the
+result as JSONL that re-imports cleanly.
 
-Ensemble merge/routing with the human review queue, the active-learning loop, and
-the shareable-bundle marketplace (M8–M10) are designed in PLAN.md but not yet
-built; the data model has carried their tables since M1 (`final_labels`,
-`projects.pipeline`), so they slot in without migrations-of-migrations.
+The active-learning loop and the shareable-bundle marketplace (M9–M10) are designed
+in PLAN.md but not yet built; the data model has carried their tables since M1, so
+they slot in without migrations-of-migrations.
 
 ## Repo layout
 
@@ -462,12 +840,15 @@ MiniLP/
 ├── backend/          # FastAPI app: api/, models/, schemas/, services/
 │                     #   services/: templates, assignment, quality, analytics, ingest, auth,
 │                     #     slots, export, judges/ (providers/, prompt, cache, budget,
-│                     #     orchestrator), webhooks/
+│                     #     orchestrator), merge/ (merge, weights, finalize, pipeline,
+│                     #     review, condition), webhooks/
 │                     #   alembic/ migrations · tests/ (pytest, run against real Postgres)
-├── frontend/         # React + TS (Vite): annotation view, annotator landing, admin/ (dashboard,
-│                     #   progress, unit browser, bias, judges + costs, template gallery, wizard)
-├── docs/             # DESIGN.md — decision log + postmortems ("why", not "what")
-│                     # extending.md — how to add a display/input type (§2.6 contract)
+├── frontend/         # React + TS (Vite): annotator home, annotation view, review queue,
+│                     #   admin/ (dashboard, progress, unit browser, bias, judges + costs,
+│                     #   template gallery, wizard, builder)
+├── docs/             # RUNBOOK.md — build · test · reset · run, and what to do when it breaks
+│                     # DESIGN.md — decision log + postmortems ("why", not "what")
+│                     # extending.md — how to add a display/input type, or a routing stage
 ├── docker-compose.yml
 ├── Testing.txt       # manual test scripts, per milestone
 ├── PLAN.md           # full project plan (§1–§14)

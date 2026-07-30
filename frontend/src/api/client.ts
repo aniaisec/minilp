@@ -18,11 +18,15 @@ import type {
   JudgeRunRow,
   LabelOut,
   Me,
+  Pipeline,
   Progress,
   Project,
   ProjectPatch,
   ProjectPatchResult,
   ProjectSummary,
+  ReviewItem,
+  ReviewOutcome,
+  ReviewQueue,
   Roster,
   SubmitRequest,
   Task,
@@ -400,5 +404,43 @@ export class MiniLpClient {
   listDeliveries(projectId?: number): Promise<WebhookDelivery[]> {
     const q = projectId === undefined ? "" : `?project=${projectId}`;
     return this.get<WebhookDelivery[]>(`/webhooks/deliveries${q}`);
+  }
+
+  // ---- M8 review queue + routing (§5, §7.2) --------------------------------
+
+  /** Escalated units awaiting a human decision, merged proposal included. */
+  reviewQueue(projectId?: number, limit = 50): Promise<ReviewQueue> {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (projectId !== undefined) q.set("project", String(projectId));
+    return this.get<ReviewQueue>(`/review/queue?${q.toString()}`);
+  }
+
+  /** One queue item plus its template — enough to render the answer widgets. */
+  reviewItem(unitId: number): Promise<ReviewItem> {
+    return this.get<ReviewItem>(`/review/${unitId}`);
+  }
+
+  /** Approve the merged proposal, or override it with the reviewer's own answer. */
+  decideReview(
+    unitId: number,
+    body: { decision: "approve" | "override"; value?: Record<string, unknown>; comment?: string },
+  ): Promise<ReviewOutcome> {
+    return this.post<ReviewOutcome>(`/review/${unitId}:decide`, body);
+  }
+
+  getPipeline(projectId: number): Promise<Pipeline> {
+    return this.get<Pipeline>(`/projects/${projectId}/pipeline`);
+  }
+
+  putPipeline(projectId: number, pipeline: Record<string, unknown>[] | null): Promise<Pipeline> {
+    return this.put<Pipeline>(`/projects/${projectId}/pipeline`, { pipeline });
+  }
+
+  /** Re-run routing over a project's already-collected units after a policy change. */
+  routeProject(
+    projectId: number,
+    body: { include_finalized?: boolean } = {},
+  ): Promise<Record<string, number>> {
+    return this.post<Record<string, number>>(`/projects/${projectId}/route`, body);
   }
 }

@@ -148,6 +148,18 @@ export function AdminApp() {
             New project
           </a>
           {apiKey && (
+            // The review queue is a *reviewer* surface, not an admin one, so it
+            // lives outside the admin hash router — this is a link into it,
+            // carrying the key so no re-auth is needed (M8, §7.2).
+            <a
+              className="mlp-admin-link"
+              href={`${window.location.pathname}?review=1&key=${encodeURIComponent(apiKey)}`}
+              data-testid="admin-review-link"
+            >
+              Review queue
+            </a>
+          )}
+          {apiKey && (
             <StartLabeling
               client={client}
               apiKey={apiKey}

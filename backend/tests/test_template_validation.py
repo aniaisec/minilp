@@ -114,6 +114,30 @@ def test_reserved_hotkey_fails_save() -> None:
     assert any("reserved" in e for e in ei.value.errors)
 
 
+def test_the_exit_key_is_reserved_so_no_template_can_claim_it() -> None:
+    """M8, §11: exit-to-home needed a key and `Esc` was already "clear
+    selection" (§2.4), so `x` was reserved. Reserving it is what makes the
+    collision impossible rather than unlikely — a template asking for it fails
+    here, at save time, which is §2.4's whole promise about hotkeys."""
+    t = _minimal()
+    t["inputs"][0]["hotkeys"] = ["a", "x", "c"]
+    with pytest.raises(TemplateValidationError) as ei:
+        validate_template(t)
+    assert any("reserved" in e and "'x'" in e for e in ei.value.errors)
+
+
+def test_auto_assignment_never_reaches_for_the_exit_key() -> None:
+    """The other half: even a template that never mentions `x` must not be
+    *handed* it by the auto-assigner, or the collision arrives by accident."""
+    t = _minimal()
+    # Enough options to walk deep into the letter pool.
+    letters = [f"opt{i}" for i in range(20)]
+    t["inputs"].append({"id": "many", "type": "checkbox", "label": "many", "options": letters})
+    a = assign_hotkeys(t["inputs"])
+    assert a.errors == []
+    assert "x" not in a.by_input["many"]["options"].values()
+
+
 def test_auto_hotkeys_first_input_digits_second_letters() -> None:
     t = _minimal()
     t["inputs"].append({"id": "q", "type": "checkbox", "label": "q", "options": ["p", "r"]})

@@ -143,6 +143,51 @@ QUALITY_CONFIG = {
     }
 }
 
+# --- M8 ensemble demo (§7.2) ------------------------------------------------
+# A project built so that one `judges:run` lands the review queue populated.
+#
+# Three deliberate settings:
+#   K = max_K = 2       — no room to grow, so disagreement escalates *now*
+#                         rather than opening slots no judge is allowed to fill
+#                         (the annotator-unit exclusion, §2.7, means each judge
+#                         votes once per unit).
+#   min_consensus 0.9   — two judges answering differently can never clear it.
+#   gold_threshold 0    — the golds here are for *calibration*, not policing:
+#                         they give the two judges genuinely different
+#                         reputations, which is what makes the weighted merge
+#                         visibly prefer one of them. The pause cliff is
+#                         demonstrated by the quality project instead.
+ENSEMBLE_UNITS = "\n".join(
+    json.dumps(row)
+    for row in (
+        [
+            {
+                "payload": {
+                    "image_url": f"https://placekitten.com/{600 + i}/420",
+                    "context": "a sample photo",
+                },
+                "is_gold": True,
+                "gold_expected": {"category": "cat"},
+            }
+            for i in range(3)
+        ]
+        + [
+            {
+                "payload": {
+                    "image_url": f"https://placekitten.com/{700 + i}/420",
+                    "context": "a sample photo",
+                }
+            }
+            for i in range(5)
+        ]
+    )
+)
+
+ENSEMBLE_CONFIG = {
+    "quality": {"gold_threshold": 0.0, "gold_window": 8, "on_disagreement": "escalate"},
+    "review": {"backlog_threshold": 5},
+}
+
 
 def _get_or_create_admin(db) -> User:
     user = db.scalar(select(User).where(User.email == ADMIN_EMAIL))
@@ -252,6 +297,46 @@ def _get_or_create_demo_judge(db, project: Project | None) -> JudgeConfig | None
     return config
 
 
+# Two judges that answer *differently*. One run over the ensemble project and
+# every unit has two disagreeing votes, so the default pipeline cannot
+# auto-finalize any of them and the review queue lands populated — which is the
+# only way "escalate on disagreement" is demonstrable by one person: the
+# annotator-unit exclusion (§2.7) means you cannot disagree with yourself.
+#
+# Their answers are pinned rather than hashed so the disagreement is guaranteed
+# and the reputation gap is real: the golds on that project expect "cat", so the
+# ensemble also shows a well-calibrated judge outweighing a poorly calibrated one
+# — which is what "calibration-weighted merge" means (§7.2).
+ENSEMBLE_JUDGES = (("demo-judge-cat", "cat"), ("demo-judge-dog", "dog"))
+
+
+def _get_or_create_ensemble(db, project: Project | None) -> list[JudgeConfig]:
+    if project is None:
+        return []
+    configs = []
+    for name, answer in ENSEMBLE_JUDGES:
+        config = db.scalar(select(JudgeConfig).where(JudgeConfig.name == name))
+        if config is None:
+            config = create_judge_config(
+                db,
+                name=name,
+                provider="mock",
+                model_id="mock-1",
+                params={
+                    "temperature": 0.0,
+                    "max_tokens": 256,
+                    "mock": {
+                        "answers": {"category": answer},
+                        "reasoning": f"Pinned demo judgment: always answers '{answer}'.",
+                    },
+                },
+                prompt_template="Classify the image into one of the given categories.",
+            )
+        attach_judge(db, project.id, config.id)
+        configs.append(config)
+    return configs
+
+
 def main() -> None:
     db = SessionLocal()
     try:
@@ -305,6 +390,20 @@ def main() -> None:
                 "Answer three of them wrong and you will be paused (M4, §6.1).",
                 "units_jsonl": QUALITY_UNITS,
             },
+            {
+                "template_name": "image-classification",
+                "name": "Demo — Ensemble + review queue",
+                "k": 2,
+                "max_k": 2,  # no room to grow: disagreement escalates immediately
+                "gold_ratio": 0.4,
+                "agreement": {"category": {"match": "exact", "min_consensus": 0.9}},
+                "config": ENSEMBLE_CONFIG,
+                "guidelines": "Two model judges vote on every unit and always "
+                "disagree, so nothing here can auto-finalize. Run them, then open "
+                "the **review queue** to approve or override the merged proposal "
+                "(M8, §7.2).",
+                "units_jsonl": ENSEMBLE_UNITS,
+            },
         ):
             p = _make_project(db, **spec)
             if p is not None:
@@ -314,6 +413,8 @@ def main() -> None:
         all_demo = db.scalars(select(Project).where(Project.name.like("Demo — %"))).all()
         judged = next((p for p in all_demo if "Side-by-side" in p.name), None)
         judge = _get_or_create_demo_judge(db, judged)
+        ensembled = next((p for p in all_demo if "Ensemble" in p.name), None)
+        ensemble = _get_or_create_ensemble(db, ensembled)
         db.commit()
 
         print("\n=== MiniLP demo ready ===")
@@ -325,6 +426,23 @@ def main() -> None:
             print(
                 f"    http://localhost:5173/?project={p.id}"
                 f"&annotator={annotator.id}&key={ADMIN_API_KEY}\n"
+            )
+        print("Annotator home — every project with the work waiting in it (M8, §11):\n")
+        print(f"  http://localhost:5173/?annotator={annotator.id}&key={ADMIN_API_KEY}\n")
+        if ensemble and ensembled is not None:
+            print("Ensembles + review queue (M8, §7.2) — two judges that disagree:\n")
+            print(
+                f"  1. Fill it : curl -X POST -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"-H 'Content-Type: application/json' "
+                f"-d '{{}}' localhost:8000/projects/{ensembled.id}/judges:run"
+            )
+            print(
+                f"  2. Review  : http://localhost:5173/?review=1"
+                f"&annotator={annotator.id}&key={ADMIN_API_KEY}"
+            )
+            print(
+                f"     Policy  : curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"localhost:8000/projects/{ensembled.id}/pipeline\n"
             )
         print("Admin surface (progress · bias · configure · add tasks · export):\n")
         print(f"  http://localhost:5173/#/admin?key={ADMIN_API_KEY}")

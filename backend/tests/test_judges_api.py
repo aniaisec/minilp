@@ -167,8 +167,11 @@ def test_attach_then_run_writes_labels(client):
     assert body["labels_written"] == 3
     assert body["runs"][0]["stopped_reason"] == "limit"
 
+    # K=1 and one judge: each labeled unit is unopposed, so M8's routing pipeline
+    # carries it straight through to finalized (§7.2). The claim under test is
+    # that three units *left the queue*, not which terminal bucket they land in.
     progress = client.get(f"/projects/{project['id']}/progress").json()
-    assert progress["funnel"]["labeled"] >= 3
+    assert progress["funnel"]["labeled"] + progress["funnel"]["finalized"] >= 3
 
 
 def test_running_with_no_judges_enrolled_is_a_409(client):

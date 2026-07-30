@@ -637,3 +637,103 @@ export interface AnnotatorSelf {
   reputation_score: number;
   pause_reason?: string | null;
 }
+
+// --- M8: merge, routing + review queue (§7.2) -------------------------------
+
+/** One rater's contribution to a merged proposal, as the review queue shows it. */
+export interface MergeVote {
+  label_id: number;
+  annotator_id: number;
+  kind: string;
+  name: string | null;
+  /** Judge config name for model raters; null for humans. */
+  judge: string | null;
+  reputation: number;
+  /** The rater's weight in the calibration-weighted merge (= live reputation). */
+  weight: number;
+  variant: Record<string, unknown> | null;
+  value: Record<string, unknown>;
+  raw: Record<string, unknown>;
+  confidence: number | null;
+  reasoning: string | null;
+  cost_usd: number | null;
+}
+
+export interface MergeCandidate {
+  value: unknown;
+  weight: number;
+  support: number;
+  share: number;
+}
+
+export interface MergeKey {
+  winner: unknown;
+  weight: number;
+  total_weight: number;
+  share: number;
+  support: number;
+  votes: number;
+  entropy: number;
+  candidates: MergeCandidate[];
+}
+
+export interface MergeProposal {
+  unit_id: number;
+  method: string;
+  value: Record<string, unknown>;
+  confidence: number;
+  entropy: number;
+  votes: MergeVote[];
+  keys: Record<string, MergeKey>;
+}
+
+export interface ReviewItem {
+  unit_id: number;
+  project_id: number;
+  project_name: string;
+  batch_id: number | null;
+  priority: number;
+  is_gold: boolean;
+  status: string;
+  escalated_at: string | null;
+  escalation_reason: string | null;
+  failed_keys: string[];
+  payload: Record<string, unknown>;
+  proposal: MergeProposal | null;
+  consensus_snapshot: Record<string, unknown>;
+  /** Present only on GET /review/{unit_id} — enough to render the answer widgets. */
+  template?: { id: number; name: string; version: number; schema: TemplateSchema } | null;
+  guidelines_md?: string | null;
+  final_label?: {
+    value: Record<string, unknown>;
+    method: string;
+    confidence: number | null;
+    decided_by: number | null;
+  } | null;
+}
+
+export interface ReviewQueue {
+  project_id: number | null;
+  depth: number;
+  threshold: number | null;
+  items: ReviewItem[];
+}
+
+export interface ReviewOutcome {
+  unit_id: number;
+  decision: "approve" | "override";
+  method: string;
+  final_label_id: number;
+  value: Record<string, unknown>;
+  confidence: number | null;
+  queue_depth: number;
+  webhooks_fired: number;
+}
+
+export interface Pipeline {
+  project_id: number;
+  pipeline: Record<string, unknown>[];
+  is_default: boolean;
+  stages: string[];
+  variables: string[];
+}

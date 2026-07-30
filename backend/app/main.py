@@ -8,6 +8,7 @@ from app.api import (
     judges,
     me,
     projects,
+    review,
     tasks,
     templates,
     units,
@@ -28,6 +29,7 @@ app.include_router(annotators.router)
 app.include_router(analytics.router)
 app.include_router(judges.router)
 app.include_router(me.router)
+app.include_router(review.router)
 app.include_router(webhooks.router)
 
 

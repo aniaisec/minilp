@@ -615,29 +615,157 @@ are attributed in the roster, and are graded against golds like anyone else's �
 which is the honest arrangement, and also the only one that does not require a
 second, unmeasured code path through submit.
 
+## M8 — Ensembles, routing, and the annotator home
+
+### Routing is the last stage of the quality pipeline, not a service beside it
+
+`on_label_submitted` gained a step 6: once a unit has stopped collecting, run the
+project's routing pipeline. Principle 5 says quality is a pipeline rather than a
+report, and "labels become *a* label" is the end of that pipeline, not a separate
+concern that happens to read the same rows. The practical consequence is that
+nothing in the API layer, the judge orchestrator or the admin surface has to
+*remember* to route — every path that writes a label goes through `submit_label`,
+and every one of them therefore routes.
+
+The import is lazy at that call site. `merge` reads `quality`'s match rules and
+entropy (§6.3/§6.4) at module scope, so a top-level import in both directions is a
+cycle; the dependency that matters — *quality's rules are merge's rules* — is the
+one kept at module scope, and the tail call is the one deferred.
+
+### The shipped default applies to projects that never asked for it
+
+§7.2 says the default pipeline "ships as" ensemble → auto_finalize → human_review.
+`effective_pipeline()` therefore returns it whenever `projects.pipeline` is null,
+including for projects created under M1–M7. That is a real behaviour change: a
+unit whose K labels agree now reaches `finalized` where before it stopped at
+`labeled`.
+
+The alternative — routing only projects with an explicit pipeline — was rejected
+because it makes "default" mean two different things depending on when a project
+was created, and because `slots/lifecycle.py` has said since M2 that "`finalized`
+is owned by later milestones (merge/review)". Four existing assertions expected
+`labeled`; they were testing *"collection is complete"* and now say so. The
+change is recorded here rather than buried in a diff because it is the one place
+M8 alters what earlier milestones do.
+
+### Voiding evidence unwinds an automatic decision — but not a human one
+
+`void_labels` now deletes an `auto_consensus` final label and lets
+`recompute_unit_status` leave `finalized` (via an explicit `force` flag, so the
+"finalized is not ours to overwrite" rule still holds everywhere else). A decision
+that survives the disappearance of everything it was made from is not a decision.
+
+A `human_approved` / `human_override` row is left alone. A reviewer's verdict is
+not evidence that can be withdrawn by discrediting the raters underneath it — they
+looked at the unit. This asymmetry is also what makes `POST /projects/{id}/route`
+safe to press twice, and is asserted from both sides.
+
+### Conditions are parsed, not evaluated
+
+A stage's `if` is a string from `projects.pipeline` — i.e. from the network, from
+a PATCH, later from an imported marketplace bundle (M10). `services/merge/
+condition.py` is a ~120-line recursive-descent parser over a grammar with no
+calls, attributes, indexing or assignment: there is nothing to escape *from*,
+rather than a denylist of things to escape *with*.
+
+**An unknown identifier raises.** Returning false would make a typo'd rule
+silently never fire, which is the worst failure mode routing has — units pile up
+in review with nothing to point at. `validate_pipeline` runs the same parse at
+save time against the variable *names*, so `consensuss >= 0.9` is a 422 on the
+project edit rather than a discovery three thousand units later.
+
+### Consensus is the minimum key; entropy is bucketed by the match rule
+
+A unit is only as decided as its least-decided input — auto-finalizing because two
+of three keys were unanimous is how bad labels get into a training set. So
+per-unit consensus is `min` over keys and entropy is `max`.
+
+Entropy is computed over **match-rule buckets**, not distinct raw values. This was
+found by an existing M4 test: a likert key declared `{"match": "within",
+"tolerance": 1}` counts votes of 4 and 5 as agreeing in §6.4, but raw vote entropy
+called them maximally divergent, so the default pipeline escalated a unit the
+project had explicitly declared to be in agreement. One notion of "the same
+answer", used by consensus, merge and entropy alike.
+
+### Merge weight is the reputation, with a floor
+
+No second scoring system: `merge_weight(a) = clamp(a.reputation_score, 0.05, 1.0)`,
+because §6.2 already ends by saying a judge's calibration score doubles as its
+merge weight. The floor exists so a rater who has genuinely earned 0.0 is
+negligible rather than *deleted* — a unit whose only voter is discredited would
+otherwise merge to "unanimous" with no votes at all.
+
+Weights are read live and never cached onto labels: a merge recomputed tomorrow
+with better calibration data should produce a better answer. The *provenance* of a
+finalized label does record the weights used at decision time, so the decision
+stays explainable after the weights move.
+
+Below §6.1's pause threshold the story is different and deliberately so: the
+annotator is paused and their work voided, so they stop voting entirely.
+Down-weighting is for the merely mediocre. Both halves are asserted.
+
+### One `final_labels` row per unit, updated in place
+
+Keeping every decision as a new row sounds like better history until the third
+query has to remember the `ORDER BY`, or an export quietly emits two rows for one
+unit. The labels are already immutable, and `provenance` records the decision that
+produced the row — including, on an override, the proposal the reviewer rejected.
+So the table answers exactly one question and answers it with one row.
+
+### `x` was added to the reserved key set, on both sides
+
+§11 notes that `Esc` is the natural key for leaving and is already §2.4's "clear
+selection", so the exit key had to be "chosen without colliding". Choosing an
+unused-looking letter would have been a collision waiting for a template with
+enough options; §2.4's actual mechanism for a global action key is the reserved
+set, so `x` joined `s`/`g`/`d`/`u` in **both** `services/templates/spec.py` and
+`hotkeys/assign.ts`, and left `LETTER_KEYS`. Auto-assignment can no longer reach
+for it and a template requesting it fails validation at save time — the collision
+is impossible rather than unlikely.
+
+### The review queue is one screen, on purpose
+
+A queue item carries the payload, the merged proposal, and every vote with its
+weight, variant and reasoning trace. A reviewer who has to open a second view to
+learn *why* the ensemble proposed something will stop looking, and a review queue
+whose decisions are uninformed is worse than none. The override editor renders the
+template's real widgets through the same registry the annotation view uses, so
+overriding a ranking is a ranking, not a JSON box.
+
+### Home renders both views from one fetch
+
+The M8 acceptance criterion is that the home page's counts "reconcile exactly with
+`/tasks/available`". The way to guarantee that is not to test it harder but to
+make disagreement unrepresentable: one fetch, two renderings, and toggling the
+view does not re-ask the server. `/tasks/available` already applies the assignment
+engine's own exclusion, so what home shows is what the annotator will be served.
+
+### Backlog fires on the crossing, and again if the backlog re-forms
+
+Escalations arrive one at a time, so "depth just became the threshold" is exactly
+the moment a backlog formed — no flag column, no dedupe table. If a reviewer
+drains it and it re-forms, it fires again, which is the useful behaviour: a
+backlog that came back is news. `project.completed` is different — a project
+completes once — so it checks the `webhook_deliveries` audit trail rather than
+introducing a flag, on the grounds that the event only matters if somebody
+subscribed, and if somebody subscribed the row exists.
+
 ## Planned (later milestones)
 - README GIF (M6) — needs a screen recording of the seeded demo; the only M6
   deliverable not landed
 - `span_select`, `image_region` and `audio_segment` (§2.1) — each is a value shape
   plus a widget under the same contract as the M6 palette, not new plumbing
-- Escalated units are flagged (`units.escalated_at`) but there is no review queue
-  to work them yet — that queue, and `final_labels`, are M8 (§7.2)
-- The annotator landing page (M5) is reachable only by *omitting* `?project=`, so
-  it is where you start rather than somewhere you can return to, and it has no
-  card view. M8 promotes it to a home screen and gives every project screen an
-  exit back to it. No new endpoint: `/tasks/available` already returns the
-  per-project counts under the same exclusion the assignment engine applies, so
-  table and cards render from one fetch and cannot disagree
-- Leaving the annotation view currently strands the held lease until it expires.
-  The exit control routes through the existing `skip` path so the slot reopens
-  immediately with its variant intact (§2.7)
-- `review.queue_backlog` and `project.completed` webhooks are registerable and
-  listed in the UI, but nothing fires them until M8 owns their triggers
+- No pipeline *editor* UI yet: the policy is readable and writable through
+  `GET`/`PUT /projects/{id}/pipeline` and validated at save time, but the wizard
+  step §11 sketches is not built. The validation endpoint is the hard part and it
+  exists; the editor is a form over it
 - Judge runs are synchronous and bounded (default 100 slots). A background
   worker would add queues, status polling and retries for a feature whose
   guardrail is already "stop at the cap"; revisit if runs outgrow a request
-- Reputation as merge weight (§7.1) — judges now carry a live score, but nothing
-  consumes it as a weight until the M8 calibration-weighted merge
+- Exports still recompute a "final label" from consensus rather than reading
+  `final_labels` (§10). Now that the table is populated, the generic-labels export
+  should prefer the decided row and fall back to consensus — small, and best done
+  alongside the M9 FT-ready formats that will read the same column
 - `sync_scroll` / `diff_highlight` / zoom-lightbox / syntax highlighting (M5, §2.2)
 - Playwright smoke test over the seeded demo — **pulled forward to M5** after the
   missing-routes postmortem (M4 section above)

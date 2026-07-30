@@ -10,9 +10,14 @@ order:
 4. **Refresh reputation** (§6.2) and **enforce the gold threshold** — a
    below-threshold annotator is paused and their recent work voided.
 5. **Evaluate consensus** (§6.4) on the unit — grow overlap or escalate.
+6. **Route** (§7.2, M8) — once a unit has stopped collecting, run the project's
+   routing pipeline: merge the votes, auto-finalize a decisive merge, escalate
+   the rest to human review. This is the last stage of "quality is a pipeline,
+   not a report" (principle 5) — the point where labels become *a* label.
 
 Ordering matters: pausing voids labels (including, possibly, the one just
-submitted), so consensus is evaluated last, against the surviving set.
+submitted), so consensus is evaluated last, against the surviving set — and
+routing later still, because a unit that just grew its overlap is not done.
 
 The assignment engine calls this; it never reaches into quality internals, and
 quality never touches slots except via ``slots.lifecycle`` — which is what keeps
@@ -22,9 +27,12 @@ the §2.7 balance invariant true through every quality action.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:  # routing is imported lazily at the call site — see step 6.
+    from app.services.merge.pipeline import RoutingResult
 
 from app.models import Annotator, Label, Project, Slot, Template, Unit
 from app.services.quality.canonical import canonicalize
@@ -47,6 +55,7 @@ class QualityOutcome:
     labels_voided: int = 0
     reputation: float | None = None
     consensus: ConsensusResult | None = None
+    routing: RoutingResult | None = None
     flags: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -57,6 +66,7 @@ class QualityOutcome:
             "reputation": self.reputation,
             "flags": self.flags,
             "consensus": self.consensus.as_dict() if self.consensus else None,
+            "routing": self.routing.as_dict() if self.routing else None,
         }
 
 
@@ -141,4 +151,17 @@ def on_label_submitted(db: Session, label: Label) -> QualityOutcome:
     # 5. Consensus / dynamic overlap growth (§6.4) — after any voiding above.
     db.refresh(unit)
     outcome.consensus = apply_consensus_policy(db, unit, project)
+
+    # 6. Routing (§7.2, M8). Only for a unit that has stopped collecting: one
+    # that just grew its overlap has more votes coming, and merging it now would
+    # finalize an answer we are in the middle of disagreeing with.
+    #
+    # Imported here rather than at module scope: ``merge`` reads this package's
+    # match rules and entropy (§6.3/§6.4), so a top-level import in both
+    # directions is a cycle. The dependency that matters — quality's rules are
+    # merge's rules — points the other way and stays at module scope there.
+    if outcome.consensus.complete and outcome.consensus.action != "grown":
+        from app.services.merge.pipeline import route_unit
+
+        outcome.routing = route_unit(db, unit, project)
     return outcome

@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Project, Slot, Template, Unit
+from app.services.merge.pipeline import PipelineError, validate_pipeline
 from app.services.slots.generation import (
     divisibility_ok,
     n_variant_values,
@@ -72,6 +73,13 @@ def create_project(
         raise ProjectError("max_labels_per_unit must be >= labels_per_unit")
     if max_lpu % n_variant_values(template.schema) != 0:
         raise ProjectError("max_labels_per_unit must also satisfy variant divisibility")
+
+    # Routing stages and their conditions are checked here (§7.2, M8) so a typo
+    # is a 422 on project creation rather than a rule that silently never fires.
+    try:
+        validate_pipeline(pipeline)
+    except PipelineError as e:
+        raise ProjectError(str(e)) from e
 
     project = Project(
         name=name,
@@ -225,6 +233,11 @@ def update_project(
     project.max_labels_per_unit = new_max
 
     # 3. Plain config columns.
+    if fields.get("pipeline") is not None:
+        try:
+            validate_pipeline(fields["pipeline"])
+        except PipelineError as e:
+            raise ProjectError(str(e)) from e
     for key, value in fields.items():
         if value is None:
             continue

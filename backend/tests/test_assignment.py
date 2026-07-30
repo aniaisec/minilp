@@ -165,7 +165,10 @@ def test_submit_fills_slot_and_labels_unit(db) -> None:
 
     assert label.value == {"sentiment": "positive"}  # value defaults to raw
     assert db.get(Slot, slot.id).status == "filled"
-    assert db.get(Unit, slot.unit_id).status == "labeled"
+    # Collection is complete. Since M8 the routing pipeline runs from here (§7.2)
+    # and a K=1 unit whose single vote is unopposed auto-finalizes, so the
+    # assertion is "stopped collecting", not one particular terminal status.
+    assert db.get(Unit, slot.unit_id).status in ("labeled", "finalized")
 
 
 def test_submit_requires_held_lease(db) -> None:
@@ -275,7 +278,7 @@ def test_void_unit_reopens_and_invalidates(db) -> None:
     for ann in (a, b):
         slot = next_task(db, ann.id, proj.id)
         submit_label(db, slot.id, ann.id, raw={"sentiment": "positive"})
-    assert db.get(Unit, unit_id).status == "labeled"
+    assert db.get(Unit, unit_id).status in ("labeled", "finalized")
 
     voided = void_unit(db, unit_id)
     assert voided == 2

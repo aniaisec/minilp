@@ -5,11 +5,15 @@
 import type { InputField } from "../api/types";
 
 // Reserved action keys (§2.4) — cannot be assigned to options.
+// 'x' is exit-to-home (M8, §11): `Esc` was already taken by "clear selection",
+// so the exit key is reserved here instead, which is how §2.4 guarantees a
+// global action key can never also belong to an option.
 export const RESERVED_ACTION_KEYS = new Set([
   "s",
   "g",
   "d",
   "u",
+  "x",
   "?",
   "enter",
   "escape",
@@ -17,8 +21,8 @@ export const RESERVED_ACTION_KEYS = new Set([
 export const OTHER_KEY = "o";
 export const ARROW_KEYS = new Set(["left", "right", "up", "down"]);
 export const DIGIT_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
-// Letters for secondary choice inputs, minus reserved letters (d,g,s,u,o).
-export const LETTER_KEYS = "abcefhijklmnpqrtvwxyz".split("");
+// Letters for secondary choice inputs, minus reserved letters (d,g,s,u,x,o).
+export const LETTER_KEYS = "abcefhijklmnpqrtvwyz".split("");
 
 const ARROW_ALIASES: Record<string, string> = {
   "←": "left",

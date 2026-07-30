@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, type TaskClient } from "../api/client";
 import type { DisplayBlock, InputField, Task, TemplateSchema } from "../api/types";
+import { ExitToHome } from "../components/ExitToHome";
 import { GuidelinesPanel } from "../components/GuidelinesPanel";
 import { HotkeyOverlay } from "../components/HotkeyOverlay";
 import { SessionStats, type SessionState } from "../components/SessionStats";
@@ -40,6 +41,12 @@ export interface AnnotateProps {
    * seeds tests and the very first render.
    */
   initialAutoSubmit?: boolean;
+  /**
+   * Where the exit control goes (M8, §11). Omitted, no exit control is rendered
+   * — which is what the admin "try this project" preview wants, since it was not
+   * reached from home and has nowhere of its own to go back to.
+   */
+  homeHref?: string;
 }
 
 const AUTO_SUBMIT_KEY = "mlp.autoSubmit";
@@ -63,6 +70,7 @@ export function Annotate({
   guidelines = "",
   sessionGoal = 25,
   initialAutoSubmit = false,
+  homeHref,
 }: AnnotateProps) {
   const [task, setTask] = useState<Task | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
@@ -323,7 +331,21 @@ export function Annotate({
     <div className="mlp-app" data-theme={theme} data-testid="annotate-root">
       <div className="mlp-annotate" style={{ maxWidth }}>
         <div className="mlp-topbar">
-          <SessionStats session={session} reputation={reputation} />
+          <div className="mlp-topbar-left">
+            {homeHref ? (
+              <ExitToHome
+                href={homeHref}
+                // Leaving releases the held lease through the same `skip` path
+                // the `s` key uses, so the slot reopens now — variant retained
+                // (§2.7) — instead of sitting leased until it expires.
+                onLeave={async () => {
+                  if (task) await client.skip(task.slot_id, annotatorId);
+                }}
+                dirty={Object.keys(answers).length > 0 && !!task}
+              />
+            ) : null}
+            <SessionStats session={session} reputation={reputation} />
+          </div>
           <div className="mlp-actions">
             <label
               className="mlp-autosubmit"
@@ -374,6 +396,7 @@ export function Annotate({
             </button>
           </div>
         </div>
+
 
         <div
           className="mlp-progress"

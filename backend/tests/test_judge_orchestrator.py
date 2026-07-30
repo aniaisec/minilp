@@ -18,6 +18,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models import Annotator, JudgeCacheEntry, JudgeRun, Label, Slot, Template, Unit, Webhook
+from app.services.assignment import void_unit
 from app.services.ingest.bulk import ingest_units, parse_jsonl
 from app.services.judges import (
     JudgeError,
@@ -320,12 +321,12 @@ def test_cache_prevents_duplicate_spend(db):
     assert first.cost_usd > 0
     assert db.scalar(select(JudgeCacheEntry).limit(1)) is not None
 
-    # Void the labels so the same units come back around, then re-run.
-    for label in db.scalars(select(Label)):
-        label.is_valid = False
-    for slot in db.scalars(select(Slot)):
-        slot.status = "open"
-        slot.leased_by = None
+    # Void the labels so the same units come back around, then re-run. Goes
+    # through the real void path rather than poking rows: since M8 a unit that
+    # agreed is auto-finalized (§7.2), and only ``void_unit`` knows to unwind
+    # that along with the labels.
+    for unit_id in list(db.scalars(select(Unit.id).where(Unit.project_id == project.id))):
+        void_unit(db, unit_id)
     db.flush()
 
     second = run_judge(db, project.id, config.id, provider=MockProvider(model_id="m"))

@@ -1,7 +1,7 @@
 """API request/response models (§5)."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -347,3 +347,37 @@ class WebhookDeliveryOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# --- M8: merge, routing + review queue (§5, §7.2) ---------------------------
+
+
+class ReviewDecision(BaseModel):
+    """A reviewer's verdict on an escalated unit (§7.2).
+
+    ``approve`` takes the merged proposal as-is; ``override`` replaces it with
+    ``value`` — raw answer keys, canonicalized the same way a label's would be.
+    """
+
+    decision: Literal["approve", "override"]
+    value: dict[str, Any] | None = Field(
+        default=None,
+        description="Required for 'override': the reviewer's own answer, keyed by input id.",
+    )
+    comment: str | None = Field(
+        default=None, description="Free-text note, stored in the final label's provenance."
+    )
+
+
+class PipelineUpdate(BaseModel):
+    """Replace a project's routing policy (§7.2). ``null`` resets to the default."""
+
+    pipeline: list[dict[str, Any]] | None = None
+
+
+class PipelineOut(BaseModel):
+    project_id: int
+    pipeline: list[dict[str, Any]]
+    is_default: bool
+    stages: list[str]
+    variables: list[str]
