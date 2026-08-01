@@ -18,9 +18,10 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import Annotator, JudgeConfig, Project, Template, User
+from app.services.active_learning import register_checkpoint
 from app.services.auth.roles import hash_api_key
 from app.services.ingest.bulk import ingest_units, parse_jsonl
-from app.services.judges import attach_judge, create_judge_config
+from app.services.judges import attach_judge, create_judge_config, run_judge
 from app.services.projects import create_project
 from app.services.templates.seed import seed_templates
 
@@ -337,6 +338,85 @@ def _get_or_create_ensemble(db, project: Project | None) -> list[JudgeConfig]:
     return configs
 
 
+# --- M9 active-learning demo (§8) -------------------------------------------
+# "Demo: scripted loop with a toy student model improving over 3 iterations"
+# (§12). ``demo-student`` is a mock judge re-enrolled three times under the
+# same name — each ``register_checkpoint`` call is exactly §8 step 4
+# ("re-enroll"), and each version's *pinned* answer is deliberately wrong on a
+# shrinking share of a fixed gold distribution (1 bird, 2 dog, 3 cat per
+# batch), so gold accuracy climbs on hard numbers: 1/6 -> 2/6 -> 3/6. A real
+# loop would fine-tune between iterations instead of relabeling by hand; the
+# mechanism this demonstrates — register the next checkpoint, watch its eval
+# curve — is identical either way.
+AL_GOLD_DISTRIBUTION = ("bird", "dog", "dog", "cat", "cat", "cat")
+AL_PROJECT_NAME = "Demo — Active-learning loop"
+AL_JUDGE_NAME = "demo-student"
+AL_ITERATIONS = ("bird", "dog", "cat")  # each version's pinned (and improving) answer
+
+# gold_threshold=0: the pause-and-void cliff (§6.1) exists for real annotators
+# below a quality bar, and would otherwise void the deliberately-imperfect
+# early checkpoints' labels out from under their own eval curve.
+AL_CONFIG = {"quality": {"gold_threshold": 0.0}}
+
+
+def _al_batch_units(batch: int) -> str:
+    return "\n".join(
+        json.dumps(
+            {
+                "payload": {
+                    "image_url": f"https://placekitten.com/{800 + batch * 10 + i}/400",
+                    "context": "a sample photo",
+                },
+                "is_gold": True,
+                "gold_expected": {"category": answer},
+            }
+        )
+        for i, answer in enumerate(AL_GOLD_DISTRIBUTION)
+    )
+
+
+def _get_or_create_al_loop_demo(db) -> Project | None:
+    """Idempotent: on a re-run, the project (and its three checkpoints) already
+    exist and nothing here repeats the labeling."""
+    existing = db.scalar(select(Project).where(Project.name == AL_PROJECT_NAME))
+    if existing is not None:
+        return existing
+
+    tmpl = _template(db, "image-classification")
+    if tmpl is None:
+        return None
+    project = create_project(
+        db,
+        name=AL_PROJECT_NAME,
+        template_id=tmpl.id,
+        labels_per_unit=1,
+        gold_ratio=1.0,
+        config=AL_CONFIG,
+        guidelines_md="A toy student model relabels three fresh batches of the "
+        "same gold mix (1 bird, 2 dog, 3 cat), one checkpoint per batch. Its "
+        "pinned answer changes each time, so gold accuracy climbs 1/6 -> 2/6 -> "
+        "3/6 across the three registered checkpoints (M9, §8).",
+    )
+    for batch_index, answer in enumerate(AL_ITERATIONS):
+        units = parse_jsonl(_al_batch_units(batch_index))
+        ingest_units(db, project, units, batch_name=f"al-v{batch_index + 1}")
+        ckpt = register_checkpoint(
+            db,
+            project.id,
+            name=AL_JUDGE_NAME,
+            provider="mock",
+            model_id=f"demo-student-ckpt-{answer}",
+            params={
+                "mock": {
+                    "answers": {"category": answer},
+                    "reasoning": f"Pinned demo checkpoint: always answers '{answer}'.",
+                }
+            },
+        )
+        run_judge(db, project.id, ckpt["judge_config_id"], limit=len(AL_GOLD_DISTRIBUTION))
+    return project
+
+
 def main() -> None:
     db = SessionLocal()
     try:
@@ -409,6 +489,10 @@ def main() -> None:
             if p is not None:
                 projects.append(p)
 
+        # Build the AL-loop demo *before* the summary re-list below, so its
+        # project shows up in the per-project URL list along with everything else.
+        al_loop = _get_or_create_al_loop_demo(db)
+
         # Re-list all demo projects (including any from prior runs) for the summary.
         all_demo = db.scalars(select(Project).where(Project.name.like("Demo — %"))).all()
         judged = next((p for p in all_demo if "Side-by-side" in p.name), None)
@@ -443,6 +527,27 @@ def main() -> None:
             print(
                 f"     Policy  : curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
                 f"localhost:8000/projects/{ensembled.id}/pipeline\n"
+            )
+        if al_loop is not None:
+            print(
+                "Active-learning loop (M9, §8) — a toy student model, three "
+                "checkpoints already run, gold accuracy 1/6 -> 2/6 -> 3/6:\n"
+            )
+            print(
+                f"  Eval curve : curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"'localhost:8000/projects/{al_loop.id}/active-learning/iterations"
+                f"?name={AL_JUDGE_NAME}' | python -m json.tool"
+            )
+            print(
+                f"  Next batch : curl -H 'Authorization: Bearer {ADMIN_API_KEY}' "
+                f"'localhost:8000/projects/{al_loop.id}/active-learning/batch'"
+            )
+            print(
+                "  Iterate    : curl -X POST -H "
+                f"'Authorization: Bearer {ADMIN_API_KEY}' -H 'Content-Type: application/json' -d "
+                '\'{"name": "demo-student", "provider": "mock", "model_id": "ckpt-4", '
+                '"params": {"mock": {"answers": {"category": "cat"}}}}\' '
+                f"localhost:8000/projects/{al_loop.id}/active-learning/checkpoints:register\n"
             )
         print("Admin surface (progress · bias · configure · add tasks · export):\n")
         print(f"  http://localhost:5173/#/admin?key={ADMIN_API_KEY}")

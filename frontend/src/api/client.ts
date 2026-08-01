@@ -2,16 +2,20 @@
 // API key; dev proxies /api → backend (see vite.config.ts).
 
 import type {
+  ActiveLearningBatch,
   AnnotatorReport,
   AnnotatorSelf,
   AvailableWork,
   Batch,
   Bias,
+  CheckpointRegister,
+  CheckpointRegistered,
   Costs,
   Distribution,
   EnrolledJudge,
   ExportFormat,
   IngestReport,
+  IterationCurve,
   JudgeConfig,
   JudgeConfigCreate,
   JudgeRunResponse,
@@ -442,5 +446,50 @@ export class MiniLpClient {
     body: { include_finalized?: boolean } = {},
   ): Promise<Record<string, number>> {
     return this.post<Record<string, number>>(`/projects/${projectId}/route`, body);
+  }
+
+  // ---- M9 active-learning loop (§8) -----------------------------------------
+
+  /** Next most-informative units — pass `judgeConfigId` to weigh in that
+   *  judge's own confidence (the "current student model" signal). */
+  activeLearningBatch(
+    projectId: number,
+    opts: {
+      limit?: number;
+      judgeConfigId?: number;
+      dedupeField?: string;
+      dedupeThreshold?: number;
+    } = {},
+  ): Promise<ActiveLearningBatch> {
+    const q = new URLSearchParams();
+    if (opts.limit !== undefined) q.set("limit", String(opts.limit));
+    if (opts.judgeConfigId !== undefined) q.set("judge_config_id", String(opts.judgeConfigId));
+    if (opts.dedupeField) q.set("dedupe_field", opts.dedupeField);
+    if (opts.dedupeThreshold !== undefined) {
+      q.set("dedupe_threshold", String(opts.dedupeThreshold));
+    }
+    const qs = q.toString();
+    return this.get<ActiveLearningBatch>(
+      `/projects/${projectId}/active-learning/batch${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  /** Version + attach a checkpoint in one call — the "re-enroll" step of the loop. */
+  registerCheckpoint(
+    projectId: number,
+    body: CheckpointRegister,
+  ): Promise<CheckpointRegistered> {
+    return this.post<CheckpointRegistered>(
+      `/projects/${projectId}/active-learning/checkpoints:register`,
+      body,
+    );
+  }
+
+  /** The eval curve across one checkpoint line's versions (§8 steps 4-5). */
+  iterationCurve(projectId: number, name: string): Promise<IterationCurve> {
+    const q = new URLSearchParams({ name });
+    return this.get<IterationCurve>(
+      `/projects/${projectId}/active-learning/iterations?${q.toString()}`,
+    );
   }
 }

@@ -737,3 +737,73 @@ export interface Pipeline {
   stages: string[];
   variables: string[];
 }
+
+// --- M9: active-learning loop (§8) -------------------------------------------
+
+/** GET /projects/{id}/active-learning/batch — the next most-informative units. */
+export interface ActiveLearningUnit {
+  unit_id: number;
+  priority: number;
+  /** 1 − the worst key's consensus rate; null with no votes yet. */
+  disagreement: number | null;
+  /** Mean per-key vote entropy; null with no votes yet. */
+  entropy: number | null;
+  /** The student judge's own reported confidence, raw (not inverted); null
+   *  unless `judge_config_id` was passed and that judge has labeled the unit. */
+  confidence: number | null;
+  score: number;
+}
+
+export interface ActiveLearningBatch {
+  project_id: number;
+  judge_config_id: number | null;
+  pool_size: number;
+  dropped_by_dedupe: number;
+  units: ActiveLearningUnit[];
+}
+
+/** POST /projects/{id}/active-learning/checkpoints:register — version + attach
+ *  in one call (§8 step 4, "re-enroll"). */
+export interface CheckpointRegister {
+  name: string;
+  provider: string;
+  model_id: string;
+  params?: Record<string, unknown> | null;
+  prompt_template?: string | null;
+  budget?: JudgeBudget | null;
+}
+
+export interface CheckpointRegistered {
+  project_id: number;
+  judge_config_id: number;
+  name: string;
+  iteration: number;
+  provider: string;
+  model_id: string;
+  annotator_id: number;
+}
+
+/** One version in an eval curve — a checkpoint's gold accuracy, agreement
+ *  against the decided (`final_labels`) answer, and spend. */
+export interface IterationPoint {
+  judge_config_id: number;
+  iteration: number;
+  provider: string;
+  model_id: string;
+  annotator_id: number | null;
+  enrolled: boolean;
+  gold_accuracy: { passes: number; total: number; rate: number | null };
+  agreement_vs_final: { agreements: number; comparisons: number; rate: number | null };
+  spend: { cost_usd: number; tokens: number; labels: number } | null;
+  label_count: number;
+  created_at: string | null;
+}
+
+/** GET /projects/{id}/active-learning/iterations — the eval curve for one
+ *  checkpoint line, oldest first. */
+export interface IterationCurve {
+  project_id: number;
+  name: string;
+  iterations: IterationPoint[];
+  human_minutes: number;
+}

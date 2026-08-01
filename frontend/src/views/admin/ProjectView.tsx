@@ -6,6 +6,7 @@
 import { useState } from "react";
 
 import type { MiniLpClient } from "../../api/client";
+import { ActiveLearningPanel } from "./ActiveLearningPanel";
 import { AddTasksPanel } from "./AddTasksPanel";
 import { BiasPanel } from "./BiasPanel";
 import { ConfigPanel } from "./ConfigPanel";
@@ -17,13 +18,23 @@ import { StartLabeling } from "./StartLabeling";
 import { UnitBrowser } from "./UnitBrowser";
 import { WebhooksPanel } from "./WebhooksPanel";
 
-type Tab = "progress" | "units" | "bias" | "roster" | "judges" | "config" | "add" | "export";
+type Tab =
+  | "progress"
+  | "units"
+  | "bias"
+  | "roster"
+  | "judges"
+  | "active-learning"
+  | "config"
+  | "add"
+  | "export";
 const TABS: { id: Tab; label: string }[] = [
   { id: "progress", label: "Progress" },
   { id: "units", label: "Units" },
   { id: "bias", label: "Bias & distribution" },
   { id: "roster", label: "Annotators" },
   { id: "judges", label: "Judges" },
+  { id: "active-learning", label: "Active learning" },
   { id: "config", label: "Configure" },
   { id: "add", label: "Add tasks" },
   { id: "export", label: "Export" },
@@ -96,6 +107,7 @@ export function ProjectView({
           <WebhooksPanel client={client} projectId={projectId} />
         </>
       )}
+      {tab === "active-learning" && <ActiveLearningPanel client={client} projectId={projectId} />}
       {tab === "config" && <ConfigPanel client={client} projectId={projectId} />}
       {tab === "add" && <AddTasksPanel client={client} projectId={projectId} />}
       {tab === "export" && <ExportPanel client={client} projectId={projectId} />}

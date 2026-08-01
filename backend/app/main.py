@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from app.api import (
+    active_learning,
     analytics,
     annotators,
     judges,
@@ -31,6 +32,7 @@ app.include_router(judges.router)
 app.include_router(me.router)
 app.include_router(review.router)
 app.include_router(webhooks.router)
+app.include_router(active_learning.router)
 
 
 @app.get("/health")

@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Annotator, Label, Project, Slot, Template, Unit
+from app.services.merge.finalize import final_label_for
 from app.services.quality.canonical import positional_variant
 from app.services.quality.consensus import evaluate_unit
 from app.services.templates.spec import UNIT_REF_PREFIX
@@ -110,7 +111,20 @@ def _labels_rows(db: Session, project: Project, template: Template) -> Iterator[
     for unit in _units(db, project.id):
         labels = _valid_labels(db, unit.id)
         consensus = evaluate_unit(db, unit, project)
-        final_label = {k.key: k.winner for k in consensus.keys if k.agreed}
+        # The decided row (§7.2) wins when it exists — it is what a human review
+        # may have overridden, and a training export must not silently prefer
+        # the ensemble's rejected proposal over what a reviewer actually decided.
+        # A unit still collecting has no ``final_labels`` row yet, so consensus
+        # (this export's original source) is the correct fallback, not an error.
+        final = final_label_for(db, unit.id)
+        if final is not None:
+            final_label = final.value or {}
+            final_method: str | None = final.method
+            final_confidence: float | None = final.confidence
+        else:
+            final_label = {k.key: k.winner for k in consensus.keys if k.agreed}
+            final_method = None
+            final_confidence = None
         row: dict[str, Any] = {
             # --- re-import surface: exactly the keys units:bulk reads ---
             "payload": unit.payload,
@@ -124,6 +138,8 @@ def _labels_rows(db: Session, project: Project, template: Template) -> Iterator[
             "escalated": unit.escalated_at is not None,
             "template": {"id": template.id, "name": template.name, "version": template.version},
             "final_label": final_label,
+            "final_method": final_method,
+            "final_confidence": final_confidence,
             "consensus": {
                 k.key: {"winner": k.winner, "support": k.support, "votes": k.votes, "rate": k.rate}
                 for k in consensus.keys

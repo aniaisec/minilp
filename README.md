@@ -2,12 +2,14 @@
 
 A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — image classification, ratings, policy review, transcription checks, and side-by-side preference judging for RLHF/LLM evaluation — with quality controls built in from the start: gold questions, inter-annotator agreement, rater reputation, and position-bias counterbalancing for comparison tasks.
 
-> **Status:** Milestone 8 — **ensembles, routing and the review queue**. The
-> human-MVP (M0–M6) is complete, LLM judges label through the same assignment
-> loop humans use (M7), and their votes now merge into a single decided label:
-> calibration-weighted, auto-finalized when decisive, escalated to a human review
-> queue when not. Annotators get a real home screen to return to. The
-> active-learning loop (M9) is next. See [PLAN.md](PLAN.md) for the full roadmap.
+> **Status:** Milestone 9 — **the active-learning loop**. The human-MVP
+> (M0–M6) is complete, LLM judges label through the same assignment loop
+> humans use (M7), their votes merge into a single decided label — auto-finalized
+> when decisive, escalated to a human review queue when not (M8) — and now a
+> checkpoint can be re-enrolled as the next judge version, ranked against the
+> next most-informative batch, and tracked on an eval curve as it (hopefully)
+> improves. The shareable-bundle marketplace (M10) is next. See
+> [PLAN.md](PLAN.md) for the full roadmap.
 
 ## Why
 
@@ -537,6 +539,65 @@ wire rather than merely hoped to be free. Auto-assignment can no longer reach fo
 it, and a template that asks for it fails validation at save time, which is what
 §2.4 promises about hotkey collisions.
 
+### Active-learning loop (M9)
+
+"You train, MiniLP loops" (§8): fine-tuning happens in your own stack, and M9
+owns exactly three things — what to label next, re-enrolling the checkpoint
+you trained, and whether it actually got better.
+
+**No new schema, on purpose.** Batch selection reads the consensus rate and
+vote entropy §6.4 already computes; re-enrolling a checkpoint is `POST
+/judges/{id}:version` followed by `:attach` — the same two calls the Judges
+tab already makes — wrapped in one call; the eval curve reads gold accuracy
+(§6.2) and `final_labels` (§7.2). A judge config's `prompt_version` **is** the
+loop's iteration counter, reused rather than duplicated — `local-ft` re-enrolled
+three times is iterations 1, 2, 3, with no second number to keep in sync.
+
+```
+GET  /projects/{id}/active-learning/batch                next most-informative units (§8)
+POST /projects/{id}/active-learning/checkpoints:register  version + attach in one call
+GET  /projects/{id}/active-learning/iterations?name=      the eval curve across versions
+```
+
+- **Informativeness is a weighted mean, not three separate thresholds.**
+  Ensemble disagreement (1 − the worst key's consensus rate), vote entropy, and
+  — when you pass the judge whose confidence should count — that judge's own
+  reported confidence, averaged over whichever of the three a unit actually
+  has. A brand-new unit with no votes yet and no judge confidence scores at a
+  neutral 0.5 rather than 0.0: nothing indicates it's *easy*, so nothing claims
+  it is. A unit already in `final_labels` is dropped from the pool entirely —
+  there's nothing left to be informative about.
+- **`agreement_vs_final` is the metric peer agreement can't be.** §6.2's
+  `peer_agreement` compares a rater to the peer majority and has no idea a
+  human later overrode the ensemble (§7.2). The eval curve reads
+  `final_labels.value` directly, so a checkpoint's score reflects what was
+  actually decided — override included.
+- **The generic-labels export now prefers the decided row.** An export taken
+  after a human review used to still show the ensemble's rejected proposal,
+  because it recomputed a "final label" from live consensus instead of reading
+  `final_labels`. It now reads the decided row first and falls back to
+  consensus only for a unit still collecting votes — a training-set export
+  should never bake in the ensemble's mistake over the human's correction.
+- **Optional embedding-diversity de-duping.** Point `dedupe_field` at a payload
+  key holding a numeric vector and the batch greedily drops a unit too similar
+  (cosine ≥ `dedupe_threshold`) to a higher-scored one already kept — informative
+  and *different*, not eight near-duplicates of the same hard case.
+
+The **Active learning** tab on any project shows the eval curve for a
+checkpoint line, a form to register the next one, and a live preview of the
+next ranked batch — the whole loop from one screen.
+
+**Try it without training anything.** The seeded demo ships a toy student
+model, `demo-student`, already re-enrolled three times with a pinned (and
+improving) answer against a fixed six-gold mix — gold accuracy 1/6 → 2/6 → 3/6,
+exactly like `docs/DESIGN.md`'s M8 disagreement demo pins its judges' answers
+instead of hoping for them:
+
+```
+curl -H "Authorization: Bearer $KEY" \
+  'localhost:8000/projects/7/active-learning/iterations?name=demo-student' | python -m json.tool
+```
+
 ## Verifying it by hand
 
 The automated suites are the contract (`pytest` + `vitest`, both green in CI).
@@ -554,8 +615,11 @@ Wait for `=== MiniLP demo ready ===` in the backend log. It prints an admin key
 assumes `KEY=dev-admin-key`, annotator `1`, and the demo's project numbering on a
 clean database — **project 6 is "Demo — Ensemble + review queue"**, built for M8:
 two model judges that always disagree, K = max_K = 2 so there is no room to grow,
-and `min_consensus: 0.9` so nothing can auto-finalize. If your ids differ, take
-them from the log rather than from here.
+and `min_consensus: 0.9` so nothing can auto-finalize. **Project 7 is "Demo —
+Active-learning loop"**, built for M9: a toy student model, `demo-student`,
+already re-enrolled three times against fresh six-gold batches, with gold
+accuracy climbing 1/6 → 2/6 → 3/6 by construction. If your ids differ, take them
+from the log rather than from here.
 
 Running the two halves separately instead:
 
@@ -580,14 +644,14 @@ npm run dev
 # Backend (needs a real PostgreSQL — see "Local development" above)
 cd backend
 export TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test
-pytest                      # 496 tests
-pytest tests/test_merge.py tests/test_merge_condition.py tests/test_review_api.py -v   # M8 only
+pytest                      # 521 tests
+pytest tests/test_active_learning.py tests/test_active_learning_api.py tests/test_bootstrap_demo.py -v   # M9 only
 ruff check .
 
 # Frontend
 cd frontend
-npm run test                # 224 tests
-npm run test -- src/views/Home.test.tsx src/views/Review.test.tsx src/views/ExitToHome.test.tsx
+npm run test                # 235 tests
+npm run test -- src/views/admin/ActiveLearningPanel.test.tsx   # M9 only
 npm run build               # typecheck + production build
 ```
 
@@ -726,7 +790,81 @@ curl -s -o /dev/null -w "reviewer PUT pipeline → %{http_code}\n" \
   -d '{"pipeline":null}' $API/projects/6/pipeline                    # → 403
 ```
 
-### 3. Frontend by hand
+### 3. Backend by hand — active-learning loop
+
+Project 7 ("Demo — Active-learning loop") already has three checkpoints run at
+boot, so the eval curve is populated from the first request.
+
+**a. See the eval curve — gold accuracy climbing by construction:**
+
+```bash
+curl -s -H "$AUTH" "$API/projects/7/active-learning/iterations?name=demo-student" \
+  | python -m json.tool
+# → iterations[0].gold_accuracy.rate ≈ 0.1667 (1/6)
+#   iterations[1].gold_accuracy.rate ≈ 0.3333 (2/6)
+#   iterations[2].gold_accuracy.rate == 0.5    (3/6)
+```
+
+**b. Rank the next batch.** With nothing labeled since boot, project 7's demo
+units are already finalized (K=1, single-vote auto-finalize), so point this at
+a project with open disagreement instead — project 6, still mid-review from
+step 2:
+
+```bash
+curl -s -H "$AUTH" "$API/projects/6/active-learning/batch?limit=5" | python -m json.tool
+# → pool_size counts only unfinalized units; each carries disagreement/entropy
+#   from its votes so far. A unit with zero votes yet would score 0.5 (neutral),
+#   not 0.0 — nothing indicates it's *easy*.
+```
+
+**c. Register a fourth checkpoint — the "re-enroll" step (§8 step 4):**
+
+```bash
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{
+  "name": "demo-student",
+  "provider": "mock",
+  "model_id": "ckpt-4",
+  "params": {"mock": {"answers": {"category": "cat"}}}
+}' $API/projects/7/active-learning/checkpoints:register | python -m json.tool
+# → iteration: 4 — the SAME counter as prompt_version, not a second one
+```
+
+The curve already shows a fourth point (`label_count: 0` — the seeded demo's
+three batches are already finalized, so there's nothing left for it to label
+until you add a fresh batch through **Add tasks**, same as any other judge):
+
+```bash
+curl -s -H "$AUTH" "$API/projects/7/active-learning/iterations?name=demo-student" \
+  | python -c "import sys,json;print(len(json.load(sys.stdin)['iterations']))"   # → 4
+```
+
+**d. Role gating.** Registering a checkpoint is admin-only; reading the curve
+and the batch are reviewer-gated, same bucket as costs and progress:
+
+```bash
+curl -s -o /dev/null -w "reviewer register → %{http_code}\n" \
+  -X POST -H "Authorization: Bearer some-reviewer-key" -H "$JSON" \
+  -d '{"name":"x","provider":"mock","model_id":"m"}' \
+  $API/projects/7/active-learning/checkpoints:register   # → 403
+curl -s -o /dev/null -w "annotator read curve → %{http_code}\n" \
+  -H "Authorization: Bearer some-annotator-key" \
+  "$API/projects/7/active-learning/iterations?name=demo-student"   # → 403
+```
+
+**e. The FT-ready export now reads the decided row.** Override a unit in the
+review queue (step 2f above), then export project 6 and check the export shows
+what the human decided, not what the ensemble proposed:
+
+```bash
+curl -s -H "$AUTH" "$API/projects/6/export?format=labels" | python -c \
+  "import sys,json;rows=[json.loads(l) for l in sys.stdin];\
+r=[r for r in rows if r.get('final_method')=='human_override'][0];\
+print(r['final_label'], r['final_method'])"
+# → {'category': 'bird'}, human_override — the export shows the correction,
+#   not the ensemble's rejected 'cat'/'dog' proposal
+```
+
+### 4. Frontend by hand
 
 Open the **annotator home** (this is the stable route to return to):
 
@@ -783,19 +921,39 @@ http://localhost:5173/?review=1&annotator=1&key=dev-admin-key
 - Decide the last escalated unit and watch the depth counter reach 0; the queue
   then shows an empty state that explains what would put something in it.
 
-### 4. What "green" should look like
+**The Active learning tab** (project 7, or project 6 for an open batch to rank):
+
+```
+http://localhost:5173/#/admin/project/7?key=dev-admin-key
+```
+
+- Open the **Active learning** tab. The **Iteration eval curve** card shows
+  `demo-student` with three rows, gold accuracy climbing v1 → v2 → v3 — the
+  same numbers step 3a printed, rendered as a table.
+- Switch to project 6 and the same tab, click **Rank next batch** — a table of
+  open units appears with disagreement/entropy/score columns; a unit with no
+  votes yet shows em-dashes and a score of `0.50`, not zeros.
+- Click **Register checkpoint…**, fill in a name/provider/model, submit — the
+  curve reloads with a new row under that name, no page refresh needed.
+- Picking `openai_compatible` as the provider reveals a **Base URL** field (for
+  a local server or your own fine-tuned checkpoint); every other provider hides
+  it, and there is no field anywhere for an API key.
+
+### 5. What "green" should look like
 
 | Check | Expectation |
 |---|---|
-| `pytest` | 496 passed, 0 failed |
+| `pytest` | 521 passed, 0 failed |
 | `ruff check .` | All checks passed |
-| `npm run test` | 224 passed (16 files) |
+| `npm run test` | 235 passed (17 files) |
 | `npm run build` | typecheck clean, bundle written |
 | `docker compose up` | `=== MiniLP demo ready ===`, annotatable in under two minutes |
 | step 2d | funnel `escalated: 8`, review depth 8 |
 | step 2d | proposal `cat` at ≈ 0.77 — weights 1.00 vs 0.30, not a coin flip |
 | step 2g | `skipped` equals the number of units you decided by hand |
 | step 2h | funnel `finalized: 8`, exactly one `project.completed` delivery |
+| step 3a | gold accuracy 0.1667 → 0.3333 → 0.5 across the three seeded checkpoints |
+| step 3c | a 4th iteration appears after registering and running one more checkpoint |
 
 ## Roadmap
 
@@ -813,25 +971,28 @@ green in CI before the next starts.
 | M6 | Authoring (visual template builder — drag-and-drop fields, expanded palette; one editor for template create/edit + project edit; add tasks to a live project) + export (JSONL), `docs/extending.md`, seeded demo | ✅ Done |
 | M7 | Judge orchestrator (provider abstraction, judge configs, versioned prompts, response cache, budget caps, dry-run, webhooks) | ✅ Done |
 | M8 | Ensembles + routing (calibration-weighted merge, declarative pipeline stages, auto-finalize, review queue UI, `final_labels` provenance) + annotator home (card grid, exit-to-home) | ✅ Done |
-| M9 | Active-learning loop (informativeness ranking, batch selection, FT-ready exports, iteration dashboard) | ⬜ Not started |
+| M9 | Active-learning loop (informativeness ranking, batch selection, checkpoint re-enrollment, FT-ready exports, iteration eval curve) | ✅ Done |
 | M10 | Marketplace (export/import template + judge-config bundles) | ⬜ Not started |
 
 > The README GIF listed under M6 in PLAN.md is the one deliverable still open — it
 > needs a screen recording of the demo. Everything else in that milestone has landed.
 
-**Where things stand:** M0–M8 are done. You can author a template with no code (or
+**Where things stand:** M0–M9 are done. You can author a template with no code (or
 by hand in JSON), create a project, upload units (`.json`/`.tsv`/paste), label from
 the keyboard with gold questions, agreement, reputation and counterbalancing
 running underneath, **enrol LLM judges that label through the same loop** — priced
 before they run, capped while they run, and measured for order bias exactly like
 humans — **merge every vote into one decided label**, auto-finalizing the clear
 cases and routing the rest to a keyboard-driven human review queue, watch progress,
-bias and cost in the admin UI, grow the project with more tasks, and export the
-result as JSONL that re-imports cleanly.
+bias and cost in the admin UI, grow the project with more tasks, export the result
+as JSONL that re-imports cleanly and now prefers the human-decided answer over a
+recomputed one, **rank the next batch by informativeness**, **re-enroll a
+fine-tuned checkpoint as the next judge version in one call**, and watch its gold
+accuracy and agreement-with-the-decided-answer on an eval curve across iterations.
 
-The active-learning loop and the shareable-bundle marketplace (M9–M10) are designed
-in PLAN.md but not yet built; the data model has carried their tables since M1, so
-they slot in without migrations-of-migrations.
+The shareable-bundle marketplace (M10) is designed in PLAN.md but not yet built;
+the data model has carried its tables since M1, so it slots in without
+migrations-of-migrations.
 
 ## Repo layout
 
@@ -841,11 +1002,12 @@ MiniLP/
 │                     #   services/: templates, assignment, quality, analytics, ingest, auth,
 │                     #     slots, export, judges/ (providers/, prompt, cache, budget,
 │                     #     orchestrator), merge/ (merge, weights, finalize, pipeline,
-│                     #     review, condition), webhooks/
+│                     #     review, condition), active_learning/ (selection, checkpoints,
+│                     #     iterations), webhooks/
 │                     #   alembic/ migrations · tests/ (pytest, run against real Postgres)
 ├── frontend/         # React + TS (Vite): annotator home, annotation view, review queue,
 │                     #   admin/ (dashboard, progress, unit browser, bias, judges + costs,
-│                     #   template gallery, wizard, builder)
+│                     #   active learning, template gallery, wizard, builder)
 ├── docs/             # RUNBOOK.md — build · test · reset · run, and what to do when it breaks
 │                     # DESIGN.md — decision log + postmortems ("why", not "what")
 │                     # extending.md — how to add a display/input type, or a routing stage

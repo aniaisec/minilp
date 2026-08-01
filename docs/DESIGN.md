@@ -750,6 +750,92 @@ completes once — so it checks the `webhook_deliveries` audit trail rather than
 introducing a flag, on the grounds that the event only matters if somebody
 subscribed, and if somebody subscribed the row exists.
 
+## M9 — Active-learning loop
+
+"You train, MiniLP loops" (§8): training happens in the user's own stack, and
+M9 owns exactly three things — which units to label next, re-enrolling a
+fine-tuned checkpoint, and the eval curve that says whether it helped.
+
+### The loop adds no schema, and that is the headline claim
+
+Every M9 table already existed. Batch selection reads the consensus rate and
+vote entropy §6.4 already computes; re-enrollment is `judges.new_version`
+(§2.5's immutable-per-version rule) followed by `judges.attach_judge` (§7.1) —
+literally the same two calls a human clicking through the Judges tab makes;
+the eval curve reads `quality.reputation.gold_accuracy` and `final_labels`
+(§7.2). The M7 provider docstring already said the punchline before M9 was
+written: a fine-tuned checkpoint is the `openai_compatible` provider class, a
+different `base_url`, no new code. M9 is the sentence made callable, not a new
+subsystem next to it.
+
+### An iteration *is* a `prompt_version`, not a second counter
+
+§2.5 already makes a judge config immutable per prompt version, specifically
+so a label stays attributable to the exact config that produced it. §8's
+example — "register the new checkpoint as `local-ft-v3`" — is that same
+version number, read as a loop iteration instead of a prompt edit. Keeping a
+parallel `iteration` column would let the two drift (a config edited three
+times but re-enrolled twice) and would answer a question nobody asks
+independently of "which version". `POST .../checkpoints:register` is sugar
+over `new_version`/`create_judge_config` + `attach_judge` for exactly this
+reason — one call for the loop's "re-enroll" step, still one counter.
+
+### Informativeness is a weighted mean over whichever signals exist, not three separate rules
+
+`disagreement` (1 − the worst key's consensus rate), `entropy` (mean per-key
+vote entropy — `vote_entropy`'s own docstring already named "active learning
+(§8)" as a consumer before M9 existed), and `confidence` (1 − the student
+judge's own reported confidence, when `judge_config_id` is given) are averaged
+over whichever of the three actually have data, the same shape
+`reputation.compute_reputation` uses for its own components (§6.2). A brand
+new unit with no votes and no judge confidence yet has no signal indicating it
+is hard, so it scores at a neutral 0.5 rather than 0.0 or crashing — 0.0 would
+rank it as *certainly easy*, which is not a claim anything here can support.
+Finalized units are dropped from the pool entirely (a `NOT EXISTS` against
+`final_labels`) rather than scored low: there is nothing left to be
+informative about once a unit is decided.
+
+### `agreement_vs_final` is not `peer_agreement` with a different name
+
+`quality.reputation.peer_agreement` (§6.2) compares a rater's answer to the
+*peer majority* on units with multiple labels — a purely statistical measure
+that has no idea whether a human later overrode the ensemble. §8 step 4 asks
+for "agreement-vs-final-labels", specifically because a reviewer's override
+(§7.2) is the interesting disagreement an eval curve should show, and peer
+agreement cannot see it (the majority might still say what the judge said even
+after a human overruled it). `agreement_vs_final` reads `final_labels.value`
+directly, so a checkpoint's score reflects what was actually decided, override
+included.
+
+### The generic-labels export now prefers the decided row
+
+Noted here as a "planned" item before M9 landed: exports recomputed a "final
+label" from live consensus rather than reading `final_labels`, which meant an
+export taken after a human override still showed the ensemble's rejected
+proposal. `export.jsonl._labels_rows` now reads `final_labels` first and falls
+back to the same consensus computation only for a unit still collecting votes
+— an export is a training-set source (§10), and training on the ensemble's
+mistake instead of the human's correction would be a silent regression baked
+into every downstream fine-tune. `preference`/`sft` are unchanged: §10 does not
+ask for that treatment there, and both already build their pairs from votes
+for a reason unrelated to finalization (RLHF pairs need every vote, not the
+decided winner).
+
+### The demo pins a gold distribution rather than approximating "learning"
+
+"A toy student model improving over 3 iterations" needs the accuracy numbers
+to be exact, not merely trending up on average — flaky-by-luck is a demo
+nobody trusts twice. `bootstrap_demo.py`'s AL project gives each of three
+fresh batches the same six-gold mix (1 bird, 2 dog, 3 cat) and pins each
+checkpoint's mock answer to a different one of those three answers, so gold
+accuracy is 1/6, then 2/6, then 3/6 by construction — the same technique
+`ENSEMBLE_JUDGES` already uses to make M8's demo disagreement guaranteed
+rather than probable. `gold_threshold: 0` turns off the pause-and-void cliff
+(§6.1) for the same reason `test_merge.py`'s synthetic-judges test does: that
+gate exists to protect real annotators from themselves, and would otherwise
+void an intentionally-imperfect early checkpoint's labels out from under its
+own eval curve.
+
 ## Planned (later milestones)
 - README GIF (M6) — needs a screen recording of the seeded demo; the only M6
   deliverable not landed
@@ -762,10 +848,6 @@ subscribed, and if somebody subscribed the row exists.
 - Judge runs are synchronous and bounded (default 100 slots). A background
   worker would add queues, status polling and retries for a feature whose
   guardrail is already "stop at the cap"; revisit if runs outgrow a request
-- Exports still recompute a "final label" from consensus rather than reading
-  `final_labels` (§10). Now that the table is populated, the generic-labels export
-  should prefer the decided row and fall back to consensus — small, and best done
-  alongside the M9 FT-ready formats that will read the same column
 - `sync_scroll` / `diff_highlight` / zoom-lightbox / syntax highlighting (M5, §2.2)
 - Playwright smoke test over the seeded demo — **pulled forward to M5** after the
   missing-routes postmortem (M4 section above)

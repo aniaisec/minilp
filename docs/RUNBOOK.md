@@ -201,7 +201,7 @@ cd C:\my\agents\Projects\MiniLP\backend
 .\.venv\Scripts\Activate.ps1
 $env:TEST_DATABASE_URL = "postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test"
 
-pytest                          # 496 tests
+pytest                          # 521 tests
 ruff check .                    # lint
 ruff format --check .           # formatting (CI runs this too)
 ```
@@ -222,7 +222,7 @@ Frontend:
 
 ```powershell
 cd C:\my\agents\Projects\MiniLP\frontend
-npm run test                    # 224 tests, 16 files
+npm run test                    # 235 tests, 17 files
 npm run test:watch              # watch mode
 ```
 
@@ -234,9 +234,16 @@ pytest tests/test_merge.py tests/test_merge_condition.py tests/test_review_api.p
 pytest -k "merge or review"     # by name
 pytest -x                       # stop at the first failure
 
+# Backend — M9 only
+pytest tests/test_active_learning.py tests/test_active_learning_api.py tests/test_bootstrap_demo.py -v
+pytest -k "active_learning or checkpoint or iteration_curve"
+
 # Frontend — M8 only
 npm run test -- src/views/Home.test.tsx src/views/Review.test.tsx src/views/ExitToHome.test.tsx
 npm run test -- -t "exit"       # by test name
+
+# Frontend — M9 only
+npm run test -- src/views/admin/ActiveLearningPanel.test.tsx
 ```
 
 Everything at once, the way CI does it:
@@ -258,10 +265,10 @@ npm run test ; npm run build
 
 | Check | Expectation |
 |---|---|
-| `pytest` | `496 passed` |
+| `pytest` | `521 passed` |
 | `ruff check .` | `All checks passed!` |
-| `ruff format --check .` | `136 files already formatted` |
-| `npm run test` | `Test Files 16 passed · Tests 224 passed` |
+| `ruff format --check .` | `144 files already formatted` |
+| `npm run test` | `Test Files 17 passed · Tests 235 passed` |
 | `npm run build` | typecheck clean, `dist/` written |
 
 ---
@@ -351,6 +358,7 @@ After a bootstrap, the log prints the ids. On a clean database:
 | 4 · Content review rubric | every M6 builder field type |
 | 5 · Quality (golds + consensus) | gold grading, pause-and-void, overlap growth |
 | 6 · **Ensemble + review queue** | **M8** — two judges that always disagree |
+| 7 · **Active-learning loop** | **M9** — a toy student model, three checkpoints already run, gold accuracy 1/6 → 2/6 → 3/6 |
 
 Key URLs (`dev-admin-key`, annotator `1`):
 
@@ -374,6 +382,15 @@ curl.exe -s -X POST -H "Authorization: Bearer $env:KEY" -H "Content-Type: applic
 
 Then reload the review queue: 8 units, each with a merged proposal of `cat` at
 ≈ 0.77 consensus (weights 1.00 vs 0.30) and both judges' reasoning traces.
+
+Project 7's active-learning loop needs nothing filled — its three checkpoints
+already ran at bootstrap. See the eval curve straight away, in the **Active
+learning** tab (`#/admin/project/7`) or by hand:
+
+```powershell
+curl.exe -s -H "Authorization: Bearer $env:KEY" `
+  "http://localhost:8000/projects/7/active-learning/iterations?name=demo-student"
+```
 
 The full step-by-step walkthrough — every endpoint, with the outputs to expect —
 is in [README.md](../README.md#verifying-it-by-hand).

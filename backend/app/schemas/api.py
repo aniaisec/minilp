@@ -334,6 +334,26 @@ class WebhookOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# --- M9: active-learning loop (§8) -------------------------------------------
+
+
+class CheckpointRegister(BaseModel):
+    """Register a fine-tuned checkpoint as the next judge-config version and
+    enroll it on this project in one call (§8 step 4, "re-enroll"). Unset
+    ``params``/``prompt_template``/``budget`` carry forward from the previous
+    checkpoint sharing ``name``, exactly like ``POST /judges/{id}:version``."""
+
+    name: str = Field(description="Judge config name — the student model's version line.")
+    provider: str = Field(description="mock | anthropic | openai | openai_compatible")
+    model_id: str
+    params: dict[str, Any] | None = Field(
+        default=None,
+        description="Provider knobs, incl. base_url for a local/OpenAI-compatible checkpoint.",
+    )
+    prompt_template: str | None = None
+    budget: dict[str, Any] | None = None
+
+
 class WebhookDeliveryOut(BaseModel):
     id: int
     webhook_id: int
