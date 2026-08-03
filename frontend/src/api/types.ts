@@ -807,3 +807,52 @@ export interface IterationCurve {
   iterations: IterationPoint[];
   human_minutes: number;
 }
+
+// ---- M10 marketplace (§12) -------------------------------------------------
+
+export type BundleKind = "template" | "judge_config" | "project";
+
+/** The exact document GET .../:export returns and POST /marketplace/import
+ *  reads back. ``template``/``judge_config``/``project_config`` are present
+ *  depending on ``kind`` — not all three at once. */
+export interface MarketplaceBundle {
+  bundle_version: number;
+  kind: BundleKind;
+  name: string;
+  description?: string | null;
+  exported_at: string;
+  template?: TemplateSchema;
+  sample?: Record<string, unknown> | null;
+  judge_config?: JudgeConfigCreate;
+  judge_configs?: JudgeConfigCreate[];
+  project?: {
+    guidelines_md?: string | null;
+    labels_per_unit?: number;
+    max_labels_per_unit?: number | null;
+    agreement?: Record<string, unknown> | null;
+    gold_ratio?: number;
+    lease_minutes?: number;
+    min_reputation?: number;
+    pipeline?: Record<string, unknown>[] | null;
+  };
+}
+
+/** GET /marketplace/bundles — one row per file shipped in the repo's local
+ *  bundle directory (§12: "no hosted registry in v1"). */
+export interface LocalBundleInfo {
+  filename: string;
+  kind: BundleKind | null;
+  name: string | null;
+  description?: string | null;
+  bundle_version: number | null;
+}
+
+/** What POST /marketplace/import (or .../bundles/{file}:import) returns — a
+ *  summary of what got created, not the full resource shapes. */
+export interface MarketplaceImportResult {
+  kind: BundleKind;
+  template?: { id: number; name: string; version: number };
+  judge_config?: { id: number; name: string; prompt_version: number };
+  judge_configs?: { id: number; name: string; prompt_version: number }[];
+  project?: { id: number; name: string };
+}

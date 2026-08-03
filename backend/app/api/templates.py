@@ -14,6 +14,7 @@ from app.schemas.api import (
     TemplateCreate,
     TemplateOut,
 )
+from app.services.marketplace import export_template_bundle
 from app.services.templates.preview import render_preview
 from app.services.templates.repository import (
     TemplateError,
@@ -173,6 +174,21 @@ def put_template_sample(
         return save_sample(db, tmpl, body.sample)
     except SampleError as e:
         raise HTTPException(status_code=422, detail={"errors": e.problems}) from e
+
+
+@router.get("/{template_id:int}:export")
+def get_template_export(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """A template as a shareable JSON bundle (§12, M10) — import it on a fresh
+    instance via ``POST /marketplace/import`` and it validates and previews
+    identically, the same guarantee a gallery template gets at boot."""
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    return export_template_bundle(template)
 
 
 @router.post("/{template_id:int}/preview")

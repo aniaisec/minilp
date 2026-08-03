@@ -7,6 +7,7 @@ from app.api import (
     analytics,
     annotators,
     judges,
+    marketplace,
     me,
     projects,
     review,
@@ -33,6 +34,7 @@ app.include_router(me.router)
 app.include_router(review.router)
 app.include_router(webhooks.router)
 app.include_router(active_learning.router)
+app.include_router(marketplace.router)
 
 
 @app.get("/health")

@@ -1,0 +1,15 @@
+{
+  "bundle_version": 1,
+  "kind": "judge_config",
+  "name": "calibrated-mock-judge",
+  "description": "A deterministic mock judge preconfigured for rating-style templates — enroll it on any project to try the judge loop end to end with no API key and no network calls.",
+  "exported_at": "2026-01-01T00:00:00+00:00",
+  "judge_config": {
+    "name": "calibrated-mock-judge",
+    "provider": "mock",
+    "model_id": "mock-1",
+    "params": { "temperature": 0.0 },
+    "prompt_template": "Answer strictly and tersely from the rendered task. Do not explain your reasoning unless asked.",
+    "budget": { "project_usd": 5.0, "max_labels": 500 }
+  }
+}

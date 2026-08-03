@@ -38,6 +38,7 @@ from app.services.judges import (
     resolve_price,
     run_judge,
 )
+from app.services.marketplace import export_judge_config_bundle
 
 router = APIRouter(tags=["judges"])
 
@@ -83,6 +84,20 @@ def get_judge(
     if config is None:
         raise HTTPException(status_code=404, detail="judge config not found")
     return config
+
+
+@router.get("/judges/{judge_config_id:int}:export")
+def get_judge_export(
+    judge_config_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """A judge config as a shareable JSON bundle (§12, M10) — never carries a
+    credential, since a config only ever stores ``params.api_key_env``."""
+    config = db.get(JudgeConfig, judge_config_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="judge config not found")
+    return export_judge_config_bundle(config)
 
 
 @router.post(

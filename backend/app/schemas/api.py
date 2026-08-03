@@ -401,3 +401,19 @@ class PipelineOut(BaseModel):
     is_default: bool
     stages: list[str]
     variables: list[str]
+
+
+class MarketplaceImportRequest(BaseModel):
+    """Import a pasted/uploaded bundle (§12, M10). The bundle carries its own
+    ``kind`` (template | judge_config | project) — nothing here re-declares it, so
+    a bundle downloaded from the docs and a bundle exported by this instance
+    import through the exact same call."""
+
+    bundle: dict[str, Any] = Field(
+        description="A marketplace bundle — the exact document GET .../:export returns."
+    )
+    create_project: bool = Field(
+        default=True,
+        description="For a project-kind bundle, also create a live Project bound to the "
+        "imported template with its judges attached. Ignored for template/judge_config bundles.",
+    )

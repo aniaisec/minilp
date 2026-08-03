@@ -1,0 +1,41 @@
+{
+  "bundle_version": 1,
+  "kind": "template",
+  "name": "summarization-quality",
+  "description": "Rate a generated summary against its source document for faithfulness, and flag quality issues. Not in the built-in gallery — a starter kit for summarization/RAG evaluation.",
+  "exported_at": "2026-01-01T00:00:00+00:00",
+  "template": {
+    "name": "summarization-quality",
+    "version": 1,
+    "description": "Rate a generated summary against its source document.",
+    "layout": { "arrangement": "split", "ratio": [3, 2], "width": "xl" },
+    "display": [
+      {
+        "type": "markdown",
+        "source": "$unit.source_document",
+        "render": { "collapsible": true, "max_lines": 20 }
+      },
+      { "type": "text", "source": "$unit.summary" }
+    ],
+    "inputs": [
+      {
+        "id": "faithfulness",
+        "type": "rating",
+        "label": "How faithful is the summary to the source?",
+        "scale": { "min": 1, "max": 5 },
+        "required": true
+      },
+      {
+        "id": "issues",
+        "type": "checkbox",
+        "label": "Quality issues",
+        "options": ["Hallucination", "Missing key point", "Too verbose", "Grammatical error"],
+        "allow_other": true
+      }
+    ]
+  },
+  "sample": {
+    "source_document": "**MiniLP** is a self-hostable platform for collecting labels — from humans and model judges — through configurable templates, with quality controls (golds, agreement, reputation, ensemble merging) built in from the start.",
+    "summary": "MiniLP lets you collect labels from humans and model judges through templates, with built-in quality controls."
+  }
+}

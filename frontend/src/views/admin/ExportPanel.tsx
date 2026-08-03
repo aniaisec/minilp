@@ -52,6 +52,8 @@ export function ExportPanel({
   const [rowCount, setRowCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bundleError, setBundleError] = useState<string | null>(null);
+  const [bundleBusy, setBundleBusy] = useState(false);
 
   const run = useCallback(async () => {
     setBusy(true);
@@ -156,6 +158,48 @@ export function ExportPanel({
           <pre className="mlp-code mlp-mono" data-testid="export-preview-body">
             {preview}
           </pre>
+        )}
+      </section>
+
+      <section className="mlp-card" data-testid="bundle-export-panel">
+        <h3 style={{ marginTop: 0 }}>Marketplace bundle (§12, M10)</h3>
+        <p className="mlp-muted">
+          The template, enrolled judge configs, and this project's config (guidelines, overlap,
+          gold ratio, routing pipeline) as one shareable JSON bundle — a starter kit for a fresh
+          instance. Units and labels stay behind; use the format above for those.
+        </p>
+        <div className="mlp-actions">
+          <button
+            className="mlp-btn"
+            disabled={bundleBusy}
+            data-testid="bundle-export-download"
+            onClick={async () => {
+              setBundleBusy(true);
+              setBundleError(null);
+              try {
+                const bundle = await client.exportProjectBundle(projectId);
+                const url = URL.createObjectURL(
+                  new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }),
+                );
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `project-${projectId}-bundle.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                setBundleError(e instanceof Error ? e.message : String(e));
+              } finally {
+                setBundleBusy(false);
+              }
+            }}
+          >
+            {bundleBusy ? "Building…" : "Download bundle"}
+          </button>
+        </div>
+        {bundleError && (
+          <div className="mlp-error-text" data-testid="bundle-export-error" style={{ marginTop: 10 }}>
+            {bundleError}
+          </div>
         )}
       </section>
     </div>

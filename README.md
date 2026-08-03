@@ -2,14 +2,16 @@
 
 A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — image classification, ratings, policy review, transcription checks, and side-by-side preference judging for RLHF/LLM evaluation — with quality controls built in from the start: gold questions, inter-annotator agreement, rater reputation, and position-bias counterbalancing for comparison tasks.
 
-> **Status:** Milestone 9 — **the active-learning loop**. The human-MVP
-> (M0–M6) is complete, LLM judges label through the same assignment loop
-> humans use (M7), their votes merge into a single decided label — auto-finalized
-> when decisive, escalated to a human review queue when not (M8) — and now a
-> checkpoint can be re-enrolled as the next judge version, ranked against the
-> next most-informative batch, and tracked on an eval curve as it (hopefully)
-> improves. The shareable-bundle marketplace (M10) is next. See
-> [PLAN.md](PLAN.md) for the full roadmap.
+> **Status:** Milestone 10 — **the marketplace**, and with it every milestone in
+> PLAN.md's roadmap is done. The human-MVP (M0–M6) is complete, LLM judges label
+> through the same assignment loop humans use (M7), their votes merge into a
+> single decided label — auto-finalized when decisive, escalated to a human
+> review queue when not (M8) — a checkpoint can be re-enrolled as the next judge
+> version, ranked against the next most-informative batch, and tracked on an
+> eval curve as it (hopefully) improves (M9), and now a template, judge config,
+> or whole project starter kit exports as a shareable, credential-free JSON
+> bundle that re-imports into a fresh instance and validates and previews
+> identically (M10). See [PLAN.md](PLAN.md) for the full roadmap.
 
 ## Why
 
@@ -598,6 +600,58 @@ curl -H "Authorization: Bearer $KEY" \
   'localhost:8000/projects/7/active-learning/iterations?name=demo-student' | python -m json.tool
 ```
 
+### Marketplace (M10)
+
+"A local directory of shared bundles ships with the repo — no hosted registry in
+v1" (PLAN.md §12). M10 adds no tables: templates, judge configs and projects have
+carried everything a bundle needs since M1, so a bundle is a *view* over rows that
+already exist, not a new persistence layer.
+
+```
+GET  /templates/{id}:export             a template as a shareable bundle
+GET  /judges/{id}:export                a judge config as a shareable bundle
+GET  /projects/{id}:export-bundle       template + enrolled judges + config, not units/labels
+GET  /marketplace/bundles               the shipped local directory's metadata
+GET  /marketplace/bundles/{filename}    one shipped bundle's full JSON
+POST /marketplace/bundles/{filename}:import   import a shipped bundle by filename
+POST /marketplace/import                import a pasted/uploaded bundle
+```
+
+- **Import reuses the exact validation path units already go through.** `POST
+  /marketplace/import` calls the same `create_template` / `create_judge_config` /
+  `create_project` a hand-authored `POST /templates` / `POST /judges` / `POST
+  /projects` call makes — an imported bundle gets no special trust, and gets the
+  same guarantee a gallery template gets at boot (M1 acceptance: validate ->
+  preview).
+- **Never a credential.** A judge config only ever stores `params.api_key_env` —
+  the *name* of an environment variable the server reads at call time — so a
+  judge-config bundle is shareable exactly as exported; there is nowhere a secret
+  could have been.
+- **A project bundle is a starter kit, not a backup.** It carries the template,
+  the enrolled judge configs, and the project's non-data config (guidelines,
+  overlap, gold ratio, routing pipeline). Units and labels stay behind — `GET
+  /projects/{id}/export` (§10) is the tool for a project's *data*. Importing one
+  creates a new template + new judge configs + (by default) a new live project
+  bound to them, with the judges attached — "re-import into a fresh instance"
+  meaning a working project, not orphaned config rows.
+- **Name collisions are handled differently for templates and judge configs, on
+  purpose.** `templates` is unique on `(name, version)`, so an imported template
+  colliding with an existing name is renamed (`"… (imported)"`) rather than
+  refused. `judge_configs` has no such constraint — versioning already mirrors
+  templates there (§2.5), so importing a same-named judge config simply writes
+  the next version, exactly like `POST /judges/{id}:version` would.
+- **The Marketplace admin page** (`#/admin/marketplace`) lists the shipped local
+  bundles with one-click import, accepts a pasted or uploaded bundle from
+  anywhere, and lists every template and judge config with a "Download bundle"
+  button. A project's bundle downloads from that project's **Export** tab, next
+  to the JSONL formats.
+
+Three bundles ship in `backend/app/services/marketplace/bundles/`: a template
+(`summarization-quality` — not in the built-in gallery), a judge config
+(`calibrated-mock-judge` — a deterministic mock judge, no API key needed), and a
+project starter kit (`toxicity-triage` — template + judge + a routing pipeline
+that auto-finalizes clear cases and escalates the rest).
+
 ## Verifying it by hand
 
 The automated suites are the contract (`pytest` + `vitest`, both green in CI).
@@ -644,14 +698,16 @@ npm run dev
 # Backend (needs a real PostgreSQL — see "Local development" above)
 cd backend
 export TEST_DATABASE_URL=postgresql+psycopg://minilp:minilp@localhost:5432/minilp_test
-pytest                      # 521 tests
+pytest                      # 557 tests
 pytest tests/test_active_learning.py tests/test_active_learning_api.py tests/test_bootstrap_demo.py -v   # M9 only
+pytest tests/test_marketplace.py tests/test_marketplace_api.py -v   # M10 only, 36 tests
 ruff check .
 
 # Frontend
 cd frontend
-npm run test                # 235 tests
+npm run test                # 246 tests
 npm run test -- src/views/admin/ActiveLearningPanel.test.tsx   # M9 only
+npm run test -- src/views/admin/MarketplacePanel.test.tsx src/views/admin/ExportPanel.test.tsx   # M10 only
 npm run build               # typecheck + production build
 ```
 
@@ -864,7 +920,69 @@ print(r['final_label'], r['final_method'])"
 #   not the ensemble's rejected 'cat'/'dog' proposal
 ```
 
-### 4. Frontend by hand
+### 4. Backend by hand — marketplace bundles
+
+**a. Export a builtin template and re-import it.** The imported copy is a new,
+independent row — editing or deleting it never touches the original:
+
+```bash
+TID=$(curl -s -H "$AUTH" "$API/templates" | python -c \
+  "import sys,json;print([t for t in json.load(sys.stdin) if t['name']=='image-classification'][0]['id'])")
+curl -s -H "$AUTH" "$API/templates/$TID:export" | tee /tmp/template-bundle.json | python -m json.tool
+NEW_ID=$(curl -s -X POST -H "$AUTH" -H "$JSON" \
+  -d "{\"bundle\": $(cat /tmp/template-bundle.json)}" \
+  "$API/marketplace/import" | python -c "import sys,json;print(json.load(sys.stdin)['template']['id'])")
+# → previews identically to the original — the M1 gallery guarantee, extended:
+curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"payload":{"image_url":"http://x/cat.png"}}' \
+  "$API/templates/$NEW_ID/preview" | python -c "import sys,json;print(json.load(sys.stdin)['payload_valid'])"
+# → True
+```
+
+**b. A judge-config bundle never carries a credential.** Only the *name* of an
+environment variable travels — grep the bundle for anything that looks like a key:
+
+```bash
+JID=$(curl -s -X POST -H "$AUTH" -H "$JSON" -d \
+  '{"name":"demo-export-judge","provider":"anthropic","model_id":"claude-x","params":{"api_key_env":"ANTHROPIC_API_KEY"}}' \
+  "$API/judges" | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
+curl -s -H "$AUTH" "$API/judges/$JID:export" | tee /tmp/judge-bundle.json | python -m json.tool
+grep -i "sk-\|secret" /tmp/judge-bundle.json   # → no match
+```
+
+**c. The shipped local directory — a one-click starter kit.** `toxicity-triage`
+bundles a template, a mock judge, and a routing pipeline into one importable
+project:
+
+```bash
+curl -s -H "$AUTH" "$API/marketplace/bundles" | python -m json.tool
+curl -s -X POST -H "$AUTH" "$API/marketplace/bundles/toxicity-triage.json:import" | python -m json.tool
+# → a new template, a new judge config, and a new project with the judge
+#   already attached — ready for units:bulk with no further setup
+```
+
+**d. Role gating.** Export and import are admin-only, the same bucket as
+templates and judges:
+
+```bash
+curl -s -o /dev/null -w "reviewer export → %{http_code}\n" \
+  -H "Authorization: Bearer some-reviewer-key" "$API/templates/$TID:export"   # → 403
+curl -s -o /dev/null -w "reviewer import → %{http_code}\n" \
+  -X POST -H "Authorization: Bearer some-reviewer-key" -H "$JSON" \
+  -d "{\"bundle\": $(cat /tmp/template-bundle.json)}" "$API/marketplace/import"   # → 403
+```
+
+**e. A malformed bundle gets the real validation errors, not a 500.**
+
+```bash
+curl -s -X POST -H "$AUTH" -H "$JSON" -d \
+  '{"bundle": {"bundle_version": 1, "kind": "template",
+    "template": {"name": "bad", "inputs": [{"id": "x", "type": "radio", "options": ["only-one"]}]}}}' \
+  "$API/marketplace/import" -w "\n%{http_code}\n"
+# → 422, {"errors": ["input 'x' (radio) needs at least 2 options"]} — the exact
+#   error POST /templates would give a hand-authored version of the same schema
+```
+
+### 5. Frontend by hand
 
 Open the **annotator home** (this is the stable route to return to):
 
@@ -939,13 +1057,44 @@ http://localhost:5173/#/admin/project/7?key=dev-admin-key
   a local server or your own fine-tuned checkpoint); every other provider hides
   it, and there is no field anywhere for an API key.
 
-### 5. What "green" should look like
+**The Marketplace page:**
+
+```
+http://localhost:5173/#/admin/marketplace?key=dev-admin-key
+```
+
+(also linked from the admin nav as **Marketplace**)
+
+- **Shared bundles** lists the three bundles shipped in the repo
+  (`summarization-quality`, `calibrated-mock-judge`, `toxicity-triage`) with
+  their kind. Click **View** on one — its full JSON loads into the paste box
+  below with no network round trip needed to read it. Click **Import** on
+  `toxicity-triage.json` — a result line reports what was created: a new
+  template, a new judge config, and a new project (with the judge attached and
+  ready to run).
+- Uncheck **"For a project bundle, also create the project"** and import
+  `toxicity-triage.json` again — this time the result has no project, only the
+  template and judge config, so re-importing the same starter kit repeatedly
+  doesn't pile up duplicate projects while you're only after the template.
+- **Import a bundle** takes a paste or a file upload. Paste `{not json` and
+  click Import — a JSON-error message appears and nothing is sent; fix it (or
+  paste a real bundle) and it imports normally.
+- **Export** lists every template and judge config with a **Download bundle**
+  button — click one and the browser downloads the exact JSON `GET .../:export`
+  returns.
+- Open a project's **Export** tab — a second card below the JSONL formats,
+  **"Marketplace bundle"**, downloads that project's template + judges + config
+  as one file. Paste that file's contents into the Marketplace page's import box
+  and re-import it: a new project appears in the dashboard, its own template and
+  judges, the original untouched.
+
+### 6. What "green" should look like
 
 | Check | Expectation |
 |---|---|
-| `pytest` | 521 passed, 0 failed |
+| `pytest` | 557 passed, 0 failed |
 | `ruff check .` | All checks passed |
-| `npm run test` | 235 passed (17 files) |
+| `npm run test` | 246 passed (19 files) |
 | `npm run build` | typecheck clean, bundle written |
 | `docker compose up` | `=== MiniLP demo ready ===`, annotatable in under two minutes |
 | step 2d | funnel `escalated: 8`, review depth 8 |
@@ -954,6 +1103,8 @@ http://localhost:5173/#/admin/project/7?key=dev-admin-key
 | step 2h | funnel `finalized: 8`, exactly one `project.completed` delivery |
 | step 3a | gold accuracy 0.1667 → 0.3333 → 0.5 across the three seeded checkpoints |
 | step 3c | a 4th iteration appears after registering and running one more checkpoint |
+| step 4a | the re-imported template previews with `payload_valid: true` |
+| step 4c | importing `toxicity-triage.json` creates a template, a judge config, and a project in one call |
 
 ## Roadmap
 
@@ -972,27 +1123,27 @@ green in CI before the next starts.
 | M7 | Judge orchestrator (provider abstraction, judge configs, versioned prompts, response cache, budget caps, dry-run, webhooks) | ✅ Done |
 | M8 | Ensembles + routing (calibration-weighted merge, declarative pipeline stages, auto-finalize, review queue UI, `final_labels` provenance) + annotator home (card grid, exit-to-home) | ✅ Done |
 | M9 | Active-learning loop (informativeness ranking, batch selection, checkpoint re-enrollment, FT-ready exports, iteration eval curve) | ✅ Done |
-| M10 | Marketplace (export/import template + judge-config bundles) | ⬜ Not started |
+| M10 | Marketplace (export/import template + judge-config + project bundles, local shared-bundle directory) | ✅ Done |
 
 > The README GIF listed under M6 in PLAN.md is the one deliverable still open — it
 > needs a screen recording of the demo. Everything else in that milestone has landed.
 
-**Where things stand:** M0–M9 are done. You can author a template with no code (or
-by hand in JSON), create a project, upload units (`.json`/`.tsv`/paste), label from
-the keyboard with gold questions, agreement, reputation and counterbalancing
-running underneath, **enrol LLM judges that label through the same loop** — priced
-before they run, capped while they run, and measured for order bias exactly like
-humans — **merge every vote into one decided label**, auto-finalizing the clear
-cases and routing the rest to a keyboard-driven human review queue, watch progress,
-bias and cost in the admin UI, grow the project with more tasks, export the result
-as JSONL that re-imports cleanly and now prefers the human-decided answer over a
-recomputed one, **rank the next batch by informativeness**, **re-enroll a
-fine-tuned checkpoint as the next judge version in one call**, and watch its gold
-accuracy and agreement-with-the-decided-answer on an eval curve across iterations.
-
-The shareable-bundle marketplace (M10) is designed in PLAN.md but not yet built;
-the data model has carried its tables since M1, so it slots in without
-migrations-of-migrations.
+**Where things stand:** M0–M10 are done — every milestone in PLAN.md's roadmap has
+landed. You can author a template with no code (or by hand in JSON), create a
+project, upload units (`.json`/`.tsv`/paste), label from the keyboard with gold
+questions, agreement, reputation and counterbalancing running underneath, **enrol
+LLM judges that label through the same loop** — priced before they run, capped
+while they run, and measured for order bias exactly like humans — **merge every
+vote into one decided label**, auto-finalizing the clear cases and routing the
+rest to a keyboard-driven human review queue, watch progress, bias and cost in the
+admin UI, grow the project with more tasks, export the result as JSONL that
+re-imports cleanly and now prefers the human-decided answer over a recomputed one,
+**rank the next batch by informativeness**, **re-enroll a fine-tuned checkpoint as
+the next judge version in one call**, watch its gold accuracy and
+agreement-with-the-decided-answer on an eval curve across iterations, and now
+**export a template, judge config, or whole project (template + judges + routing
+pipeline) as a shareable JSON bundle** and import it into a fresh instance — no
+new tables, since §4 has carried every one a bundle touches since M1.
 
 ## Repo layout
 
@@ -1003,11 +1154,12 @@ MiniLP/
 │                     #     slots, export, judges/ (providers/, prompt, cache, budget,
 │                     #     orchestrator), merge/ (merge, weights, finalize, pipeline,
 │                     #     review, condition), active_learning/ (selection, checkpoints,
-│                     #     iterations), webhooks/
+│                     #     iterations), webhooks/, marketplace/ (bundle export/import,
+│                     #     local shared-bundle directory)
 │                     #   alembic/ migrations · tests/ (pytest, run against real Postgres)
 ├── frontend/         # React + TS (Vite): annotator home, annotation view, review queue,
 │                     #   admin/ (dashboard, progress, unit browser, bias, judges + costs,
-│                     #   active learning, template gallery, wizard, builder)
+│                     #   active learning, template gallery, wizard, builder, marketplace)
 ├── docs/             # RUNBOOK.md — build · test · reset · run, and what to do when it breaks
 │                     # DESIGN.md — decision log + postmortems ("why", not "what")
 │                     # extending.md — how to add a display/input type, or a routing stage

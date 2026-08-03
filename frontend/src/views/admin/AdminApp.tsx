@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { MiniLpClient } from "../../api/client";
 import { Dashboard } from "./Dashboard";
+import { MarketplacePanel } from "./MarketplacePanel";
 import { ProjectView } from "./ProjectView";
 import { StartLabeling } from "./StartLabeling";
 import { TemplateGallery } from "./TemplateGallery";
@@ -109,6 +110,8 @@ export function AdminApp() {
         onEdit={(id) => nav(`#/admin/templates/${id}/edit`)}
       />
     );
+  } else if (parts[1] === "marketplace") {
+    body = <MarketplacePanel client={client} />;
   } else if (parts[1] === "new") {
     body = <Wizard client={client} onCreated={(id) => nav(`#/admin/project/${id}`)} />;
   } else if (parts[1] === "project" && parts[2]) {
@@ -143,6 +146,9 @@ export function AdminApp() {
           </a>
           <a className="mlp-admin-link" href="#/admin/templates">
             Templates
+          </a>
+          <a className="mlp-admin-link" href="#/admin/marketplace">
+            Marketplace
           </a>
           <a className="mlp-admin-link" href="#/admin/new">
             New project

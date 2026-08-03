@@ -1,0 +1,50 @@
+{
+  "bundle_version": 1,
+  "kind": "project",
+  "name": "Toxicity triage (starter kit)",
+  "description": "A ready-to-run project: a toxicity-classification template, a mock judge to seed initial labels, and a routing pipeline that auto-finalizes clear cases and escalates the rest to human review.",
+  "exported_at": "2026-01-01T00:00:00+00:00",
+  "template": {
+    "name": "toxicity-triage",
+    "version": 1,
+    "description": "Classify a piece of text for toxicity.",
+    "layout": { "arrangement": "stack", "width": "lg" },
+    "display": [{ "type": "text", "source": "$unit.text", "render": { "collapsible": false } }],
+    "inputs": [
+      {
+        "id": "toxicity",
+        "type": "choice_buttons",
+        "label": "Is this text toxic?",
+        "options": ["Not toxic", "Mildly toxic", "Severely toxic"],
+        "required": true
+      }
+    ]
+  },
+  "sample": {
+    "text": "Example text for this field."
+  },
+  "judge_configs": [
+    {
+      "name": "toxicity-judge",
+      "provider": "mock",
+      "model_id": "mock-1",
+      "params": { "temperature": 0.0 },
+      "prompt_template": "Classify the text for toxicity. Answer with exactly one of the offered options.",
+      "budget": { "project_usd": 5.0, "max_labels": 500 }
+    }
+  ],
+  "project": {
+    "guidelines_md": "Flag text as **severely toxic** only for explicit threats, slurs, or harassment. Sarcasm and strong opinions alone are not toxic.",
+    "labels_per_unit": 1,
+    "max_labels_per_unit": 3,
+    "agreement": null,
+    "gold_ratio": 0.1,
+    "lease_minutes": 30,
+    "min_reputation": 0.0,
+    "pipeline": [
+      { "stage": "ensemble", "merge": "calibration_weighted" },
+      { "stage": "auto_finalize", "if": "consensus >= 0.9 && entropy <= 0.3" },
+      { "stage": "human_review", "else": true }
+    ]
+  }
+}

@@ -836,6 +836,56 @@ gate exists to protect real annotators from themselves, and would otherwise
 void an intentionally-imperfect early checkpoint's labels out from under its
 own eval curve.
 
+### A bundle is a view, not a fourth persistence layer
+
+M10 added no tables. `templates`, `judge_configs` and `projects` have carried
+everything a bundle touches since M1 (§1 principle 6, "schema-first for the
+future") — `export_*_bundle` reads existing rows into a JSON document and
+`import_bundle` calls the exact same service functions `POST /templates` /
+`POST /judges` / `POST /projects` already call. An imported bundle gets no
+special trust and no special code path: the M1 gallery guarantee (validate ->
+preview) extends to anything shareable for free, because it was never a
+template-specific guarantee — it was always "what `create_template` enforces."
+
+### Name collisions: templates are renamed, judge configs are versioned
+
+The two collide differently on import, and both follow the rule already on the
+books for that table rather than inventing a bundle-specific one.
+`templates` is unique on `(name, version)` and every import lands at version 1,
+so a same-named target is renamed (`"… (imported)"`, `"… (imported 2)"`, …)
+rather than refused — refusing would make "I already have a template called
+this" a dead end instead of an inconvenience. `judge_configs` carries no such
+constraint; versioning already mirrors templates there by name (§2.5,
+`services/judges/configs.py`), so importing a same-named config simply writes
+the next `prompt_version`, identical to what `POST /judges/{id}:version` does.
+Renaming a judge config on import would have been the *inconsistent* choice —
+it already has a first-class "same name, new version" story, and a bundle
+should use it rather than route around it.
+
+### A project bundle is a starter kit, not a backup
+
+`export_project_bundle` carries the template, the enrolled judge configs, and
+the project's non-data config (guidelines, overlap, gold ratio, routing
+pipeline) — deliberately not units or labels. §10's `GET /projects/{id}/export`
+already owns "a project's data, re-importable through `units:bulk`"; a second
+export path that also serializes units would be two competing answers to "how
+do I get my project out of MiniLP," disagreeing the moment one of them changes.
+Importing a project bundle creates a new template and new judge configs (each
+through the same renamed/versioned rule above) and — unless the caller passes
+`create_project=false` — a new live `Project` bound to them with the judges
+attached. "Re-import into a fresh instance" (§14 v3) means landing on a project
+you can immediately run judges on or upload units to, not a pile of orphaned
+config rows the admin has to wire together by hand.
+
+### Judge-config bundles were credential-free before M10 existed
+
+`params.api_key_env` (the *name* of an environment variable, read at call time
+— see "API keys are named, never stored" above) was an M7 decision made with
+M10 already in mind: `JudgeConfigCreate`'s docstring has said "so a config
+stays shareable (M10 bundles) without leaking anyone's credentials" since M7
+landed. `export_judge_config_bundle` had nothing to redact — there was never a
+secret in the row to leave out.
+
 ## Planned (later milestones)
 - README GIF (M6) — needs a screen recording of the seeded demo; the only M6
   deliverable not landed

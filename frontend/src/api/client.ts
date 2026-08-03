@@ -21,6 +21,9 @@ import type {
   JudgeRunResponse,
   JudgeRunRow,
   LabelOut,
+  LocalBundleInfo,
+  MarketplaceBundle,
+  MarketplaceImportResult,
   Me,
   Pipeline,
   Progress,
@@ -491,5 +494,52 @@ export class MiniLpClient {
     return this.get<IterationCurve>(
       `/projects/${projectId}/active-learning/iterations?${q.toString()}`,
     );
+  }
+
+  // ---- M10 marketplace (§12) ------------------------------------------------
+
+  /** A template as a shareable bundle — import it on a fresh instance and it
+   *  validates and previews identically (§12, M1 guarantee extended). */
+  exportTemplateBundle(templateId: number): Promise<MarketplaceBundle> {
+    return this.get<MarketplaceBundle>(`/templates/${templateId}:export`);
+  }
+
+  /** A judge config as a shareable bundle — never carries a credential. */
+  exportJudgeBundle(judgeConfigId: number): Promise<MarketplaceBundle> {
+    return this.get<MarketplaceBundle>(`/judges/${judgeConfigId}:export`);
+  }
+
+  /** A project's template + enrolled judges + config (not its units/labels) as
+   *  a starter-kit bundle. For the project's data, see `exportUrl`/`fetchExport`. */
+  exportProjectBundle(projectId: number): Promise<MarketplaceBundle> {
+    return this.get<MarketplaceBundle>(`/projects/${projectId}:export-bundle`);
+  }
+
+  /** Metadata for every bundle shipped in the repo's local directory (§12: "no
+   *  hosted registry in v1"). */
+  listLocalBundles(): Promise<{ bundles: LocalBundleInfo[] }> {
+    return this.get(`/marketplace/bundles`);
+  }
+
+  /** The full document for one shipped bundle — for inspecting before import. */
+  getLocalBundle(filename: string): Promise<MarketplaceBundle> {
+    return this.get<MarketplaceBundle>(`/marketplace/bundles/${encodeURIComponent(filename)}`);
+  }
+
+  /** Import one of the shipped bundles by filename — one click, no copy/paste. */
+  importLocalBundle(filename: string, createProject = true): Promise<MarketplaceImportResult> {
+    const q = new URLSearchParams({ create_project: String(createProject) });
+    return this.post<MarketplaceImportResult>(
+      `/marketplace/bundles/${encodeURIComponent(filename)}:import?${q.toString()}`,
+    );
+  }
+
+  /** Import a pasted/uploaded bundle. Reuses the exact validation path
+   *  `POST /templates` / `POST /judges` / `POST /projects` already run. */
+  importBundle(bundle: MarketplaceBundle, createProject = true): Promise<MarketplaceImportResult> {
+    return this.post<MarketplaceImportResult>(`/marketplace/import`, {
+      bundle,
+      create_project: createProject,
+    });
   }
 }

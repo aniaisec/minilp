@@ -21,6 +21,7 @@ from app.schemas.api import (
 from app.services.analytics import project_roster
 from app.services.export import EXPORT_FORMATS, ExportError, iter_jsonl
 from app.services.ingest.bulk import FORMATS, ingest_report, ingest_units, parse_payload_text
+from app.services.marketplace import MarketplaceError, export_project_bundle
 from app.services.projects import ProjectError, create_project, update_project
 from app.services.templates.validation import TemplateValidationError
 
@@ -114,6 +115,24 @@ def get_export(
         media_type="application/x-ndjson",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/{project_id:int}:export-bundle")
+def get_project_bundle(
+    project_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+) -> dict:
+    """A project's template + enrolled judge configs + config (not its units or
+    labels) as a shareable JSON bundle (§12, M10) — a starter kit for a fresh
+    instance. For the project's *data*, see ``GET /{id}/export`` (§10)."""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    try:
+        return export_project_bundle(db, project)
+    except MarketplaceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @router.post("/{project_id:int}/units:bulk")
