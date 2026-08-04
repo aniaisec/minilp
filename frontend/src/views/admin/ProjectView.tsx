@@ -49,13 +49,11 @@ export function ProjectView({
   client,
   projectId,
   apiKey,
-  onBack,
 }: {
   client: MiniLpClient;
   projectId: number;
   /** Carried into the annotation-view URL so "Start labeling" needs no re-auth. */
   apiKey: string;
-  onBack: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("progress");
 
@@ -65,9 +63,10 @@ export function ProjectView({
       style={{ maxWidth: WIDE_TABS.has(tab) ? "none" : "var(--content-xl)" }}
     >
       <div className="mlp-actions" style={{ gap: 12 }}>
-        <button className="mlp-btn" onClick={onBack}>
-          ← projects
-        </button>
+        {/* No "← projects" button and no heading here any more: the shell's
+            breadcrumb is the way back and its `<h1>` names the project. Two
+            controls doing the same job, one of them a second title, is what the
+            command bar exists to replace. */}
         {/* Exit to home (M8, §11): every project screen carries a visible way
             back to the annotator home, this one included. It resolves the
             admin's own rater record on click, the same bridge "Start labeling"
@@ -78,7 +77,6 @@ export function ProjectView({
           label="← Home"
           className="mlp-btn mlp-btn-exit"
         />
-        <h2 style={{ margin: 0 }}>Project #{projectId}</h2>
         <div style={{ marginLeft: "auto" }}>
           <StartLabeling client={client} projectId={projectId} apiKey={apiKey} />
         </div>

@@ -26,9 +26,11 @@ const FOCUSABLE = [
 ].join(",");
 
 function focusableWithin(root: HTMLElement): HTMLElement[] {
+  // Attribute-based rather than layout-based (`offsetParent`, `getClientRects`)
+  // on purpose: jsdom does no layout, so a layout test would exclude everything
+  // under test and the trap would silently pass by trapping nothing. Anything
+  // hidden inside this container is hidden by attribute, not by CSS.
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    // `offsetParent === null` catches display:none; the explicit `hidden`
-    // check catches the case jsdom cannot lay out, which is every case in tests.
     (el) => !el.hasAttribute("hidden") && el.getAttribute("aria-hidden") !== "true",
   );
 }

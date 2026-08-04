@@ -95,9 +95,17 @@ export function AdminShell({
   const narrow = useMediaQuery("(max-width: 900px)");
   const mobile = useMediaQuery("(max-width: 640px)");
 
-  // The *preference* is what persists. The viewport can override it downward
-  // (auto-collapse) without overwriting what the admin chose on a wide screen.
-  const collapsed = mobile ? false : collapsedPref || narrow;
+  // Auto-collapse is a *default*, not an override. Crossing below 900px
+  // collapses the rail, but the toggle can still expand it afterwards —
+  // otherwise the control sits there looking operable and does nothing, which
+  // is worse than not offering it.
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
+  useEffect(() => setAutoCollapsed(narrow), [narrow]);
+
+  // The *preference* is what persists, and only the wide-screen choice writes
+  // to it — an auto-collapse the admin never asked for must not come back with
+  // them on a desktop.
+  const collapsed = mobile ? false : collapsedPref || autoCollapsed;
 
   const railRef = useRef<HTMLElement | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
@@ -132,7 +140,14 @@ export function AdminShell({
     document.title = `${title} · Admin · MiniLP`;
   }, [title]);
 
-  const toggleCollapsed = useCallback(() => setCollapsedPref((c) => !c), []);
+  const toggleCollapsed = useCallback(() => {
+    if (collapsed) {
+      setCollapsedPref(false);
+      setAutoCollapsed(false);
+    } else {
+      setCollapsedPref(true);
+    }
+  }, [collapsed]);
 
   // Keyboard: `[` toggles the rail, `g` then p/t/m jumps. Same conventions as
   // the annotation view's hotkeys — guarded by `isTypingTarget`, and suppressed
@@ -343,7 +358,10 @@ export function AdminShell({
             <span className="mlp-rail-icon">
               {collapsed ? <IconExpand /> : <IconCollapse />}
             </span>
-            <span className="mlp-rail-label">Collapse</span>
+            {/* The name has to describe what the press *does*, not what the rail
+                currently is — a control called "Collapse" that expands is a lie
+                told to exactly the people who cannot see the arrow. */}
+            <span className="mlp-rail-label">{collapsed ? "Expand" : "Collapse"}</span>
             <span className="mlp-rail-tip" aria-hidden="true">
               Expand navigation
             </span>

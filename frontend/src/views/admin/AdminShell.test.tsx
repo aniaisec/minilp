@@ -126,6 +126,27 @@ describe("rail", () => {
     expect(window.localStorage.getItem(COLLAPSE_STORAGE)).toBe("false");
   });
 
+  it("lets the toggle expand a rail that auto-collapsed", () => {
+    // Auto-collapse is a default, not an override. If the viewport wins
+    // unconditionally, the toggle below 900px looks operable and does nothing.
+    mockViewport(800);
+    renderShell();
+    expect(screen.getByTestId("admin-shell")).toHaveAttribute("data-collapsed", "true");
+
+    fireEvent.click(screen.getByTestId("rail-toggle"));
+
+    expect(screen.getByTestId("admin-shell")).toHaveAttribute("data-collapsed", "false");
+  });
+
+  it("names the toggle after what pressing it does", () => {
+    renderShell();
+    const toggle = screen.getByTestId("rail-toggle");
+
+    expect(toggle).toHaveAccessibleName("Collapse");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAccessibleName("Expand");
+  });
+
   it("hides icons from assistive technology so nothing is announced twice", () => {
     renderShell();
     const item = screen.getByTestId("rail-projects");

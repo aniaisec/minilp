@@ -142,12 +142,7 @@ export function AdminApp() {
     title = `Project #${parts[2]}`;
     crumbs = [PROJECTS_CRUMB];
     body = (
-      <ProjectView
-        client={client}
-        projectId={Number(parts[2])}
-        apiKey={apiKey}
-        onBack={() => nav("#/admin")}
-      />
+      <ProjectView client={client} projectId={Number(parts[2])} apiKey={apiKey} />
     );
   } else {
     body = (
