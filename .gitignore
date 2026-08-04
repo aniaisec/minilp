@@ -27,3 +27,8 @@ frontend/vite.config.ts.timestamp-*.mjs
 
 # Postgres data (compose volume fallback)
 pgdata/
+
+# Visual review artifacts. The snapshot bundles are a few hundred KB each and
+# the comparison sheet is emitted alongside them, so the whole directory is
+# generated: `node frontend/scripts/snapshot.mjs before|after`.
+docs/screenshots/

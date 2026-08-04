@@ -88,5 +88,75 @@ writeFileSync(
 `,
 );
 
+// The side-by-side comparison sheet. Emitted here rather than kept as a file in
+// the repo, because the whole docs/screenshots directory is gitignored — the
+// generated bundles are several MB and regenerating them is one command. A
+// hand-maintained sheet in a gitignored folder would simply get lost.
+//
+// Frames missing on disk render as empty boxes rather than breaking the page,
+// so a sheet built from only one side is still readable.
+const shotsDir = join(root, "..", "docs", "screenshots");
+const PAIRS = [
+  ["Dashboard — light", "dashboard-light", 1440],
+  ["Dashboard — dark", "dashboard-dark", 1440],
+  ["Project view — light", "project-light", 1440],
+  ["Rail collapsed (mlp.navCollapsed = true)", "dashboard-collapsed", 1440],
+  ["Narrow viewport — 560px", "dashboard-narrow", 560],
+];
+
+const section = ([heading, name, width]) => `
+    <h2>${heading}</h2>
+    <div class="pair" style="--shot-w: ${width}px">
+      <figure>
+        <figcaption>Before</figcaption>
+        <div class="frame"><iframe src="before/${name}.html" title="Before — ${name}"></iframe></div>
+      </figure>
+      <figure>
+        <figcaption>After</figcaption>
+        <div class="frame"><iframe src="after/${name}.html" title="After — ${name}"></iframe></div>
+      </figure>
+    </div>`;
+
+writeFileSync(
+  join(shotsDir, "index.html"),
+  `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MiniLP admin surface — before / after</title>
+    <style>
+      :root { --shot-w: 1440px; --shot-h: 900px; --scale: 0.45; }
+      body { margin: 0; padding: 28px 32px 60px; background: #eef0f3; color: #1a1d23;
+             font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      h1 { margin: 0 0 4px; font-size: 22px; }
+      p.sub { margin: 0 0 24px; color: #4b5563; }
+      h2 { margin: 28px 0 10px; font-size: 15px; text-transform: uppercase;
+           letter-spacing: 0.06em; color: #4b5563; }
+      .pair { display: grid; gap: 20px;
+              grid-template-columns: repeat(2, calc(var(--shot-w) * var(--scale))); }
+      figure { margin: 0; }
+      figcaption { margin-bottom: 6px; font-size: 12px; font-weight: 650;
+                   text-transform: uppercase; letter-spacing: 0.05em; color: #4b5563; }
+      .frame { width: calc(var(--shot-w) * var(--scale));
+               height: calc(var(--shot-h) * var(--scale)); overflow: hidden;
+               border: 1px solid #c8cfd8; border-radius: 8px; background: #fff;
+               box-shadow: 0 2px 8px rgba(16, 24, 40, 0.12); }
+      .frame iframe { width: var(--shot-w); height: var(--shot-h); border: 0;
+                      transform: scale(var(--scale)); transform-origin: 0 0; }
+    </style>
+  </head>
+  <body>
+    <h1>MiniLP admin surface — before / after</h1>
+    <p class="sub">
+      UX modernization plan, phases 1 (token layer) and 2 (admin shell). Each frame is the real
+      application rendered against fixture data, at a 1440×900 viewport unless noted.
+      Regenerate with <code>node frontend/scripts/snapshot.mjs after</code>.
+    </p>${PAIRS.map(section).join("")}
+  </body>
+</html>
+`,
+);
+
 const kb = Math.round(readFileSync(join(outDir, `${SCENARIOS[0].name}.html`)).length / 1024);
 console.log(`wrote ${SCENARIOS.length + 1} files to ${outDir} (${kb} KB each)`);
+console.log(`comparison sheet: ${join(shotsDir, "index.html")}`);
