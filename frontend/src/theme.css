@@ -1,26 +1,115 @@
-/* Design tokens + visual system (§2.2): card surfaces, typographic scale tuned
-   for long reading, light/dark theme, motion limited to instant feedback. */
+/* ============================================================================
+   MiniLP visual system.
+
+   Three layers, in this order, and the order is load-bearing:
+
+     1. TOKENS      — the only place a raw value is allowed to appear.
+     2. PRIMITIVES  — element defaults and the cross-cutting rules (focus,
+                      motion, screen-reader utilities) everything else relies on.
+     3. COMPONENTS  — the app's own classes, which reference tokens only.
+
+   Rule of thumb when editing: if you are typing a hex code, a pixel padding, or
+   a shadow outside layer 1, the token you want probably exists already.
+   ========================================================================= */
+
+/* ==========================================================================
+   1. TOKENS
+   ========================================================================== */
 
 :root {
+  /* ---- type ------------------------------------------------------------ */
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
+  /* ---- spacing --------------------------------------------------------- */
+  /* A 4px scale. `--gap` predates it and is kept as the alias for step 4 so
+     the existing layout rules do not all have to change at once. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --gap: var(--space-4);
+
+  /* ---- radius ---------------------------------------------------------- */
+  /* Controls are 8px and cards are 12px. The previous uniform 10px is what
+     made small controls look soft and large cards look sharp at once. */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* ---- elevation ------------------------------------------------------- */
+  /* Three levels, because a resting card, a sticky bar and a floating layer
+     are three different distances from the page and one shadow cannot say so. */
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --shadow-2: 0 2px 4px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-3: 0 8px 16px rgba(16, 24, 40, 0.08), 0 16px 40px rgba(16, 24, 40, 0.16);
+  --shadow: var(--shadow-1);
+
+  /* ---- surfaces and text ----------------------------------------------- */
   --bg: #f6f7f9;
   --surface: #ffffff;
   --surface-2: #f0f2f5;
+  --surface-3: #e6e9ee;
   --border: #d9dee5;
+  --border-strong: #b9c1cc;
   --text: #1a1d23;
-  --text-muted: #5b6472;
-  --accent: #2f6df6;
+  /* Darkened from #5b6472, which sat at 4.3:1 on --surface-2 — below AA for
+     body text. This is 6.7:1 on --surface-2 and 8.6:1 on --surface. */
+  --text-muted: #4b5563;
+
+  /* ---- accent (admin / default mode) ----------------------------------- */
+  /* A triple, not a single hue. `--accent-strong` is the only one with enough
+     contrast to carry white text or to serve as a focus ring; `--accent` is
+     for borders, icons and graphics (3:1 territory); `--accent-soft` is a
+     tint for selected backgrounds. Using them the other way round is how
+     contrast bugs get shipped. */
+  --accent-strong: #185fa5;
+  --accent: #378add;
+  --accent-soft: #e6f1fb;
   --accent-contrast: #ffffff;
-  --accent-soft: #e7effe;
-  --danger: #d1453b;
-  --ok: #1f9d55;
 
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
-  --gap: 16px;
+  --danger: #b3261e;
+  --danger-soft: #fdecea;
+  --ok: #1f7a45;
+  --warn: #8a5a00;
 
+  /* ---- disabled -------------------------------------------------------- */
+  /* Explicit tokens rather than `opacity: .5`: opacity multiplies against
+     whatever happens to be behind the control, so its contrast cannot be
+     reasoned about, let alone tested. */
+  --disabled-bg: var(--surface-2);
+  --disabled-border: var(--border);
+  /* 4.8:1 on --disabled-bg. A disabled control still has to be readable —
+     "unavailable" is information, and #6b7280 landed at 4.31:1. */
+  --disabled-text: #636b77;
+
+  /* ---- focus ----------------------------------------------------------- */
+  --focus-ring: var(--accent-strong);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  /* Knockout ring: keeps the outline visible when the element it sits on is
+     itself accent-coloured. */
+  --focus-ring-knockout: var(--surface);
+
+  /* ---- shell metrics --------------------------------------------------- */
+  --rail-w: 232px;
+  --rail-w-collapsed: 56px;
+  --cmdbar-h: 64px;
+  --mode-bar-h: 3px;
+  /* Where a sticky element inside the content column has to start so it clears
+     the command bar. One token, so the gallery list and the builder preview
+     cannot drift apart from the bar's actual height again. */
+  --sticky-top: calc(var(--cmdbar-h) + var(--space-3));
+
+  /* ---- motion ---------------------------------------------------------- */
+  --motion-fast: 120ms;
+  --motion: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ---- content widths -------------------------------------------------- */
   --content-md: 640px;
   --content-lg: 880px;
   --content-xl: 1180px;
@@ -31,15 +120,63 @@
   --bg: #0f1216;
   --surface: #171b21;
   --surface-2: #1f242c;
+  --surface-3: #272e38;
   --border: #2b323c;
+  --border-strong: #3d4653;
   --text: #e8ebef;
-  --text-muted: #98a2b3;
+  --text-muted: #a6b0bf;
+
+  --accent-strong: #7aaef0;
   --accent: #5c8cff;
-  --accent-contrast: #0f1216;
   --accent-soft: #1c2740;
+  --accent-contrast: #0f1216;
+
   --danger: #f2635a;
+  --danger-soft: #33201e;
   --ok: #4ec27f;
+  --warn: #d9a441;
+
+  --disabled-bg: #1b2027;
+  --disabled-border: #2b323c;
+  --disabled-text: #8994a5;
+
+  --focus-ring-knockout: #0f1216;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 8px 16px rgba(0, 0, 0, 0.45), 0 16px 40px rgba(0, 0, 0, 0.55);
 }
+
+/* ---- mode identity ------------------------------------------------------
+ *
+ * Blue administers, teal produces data. Only the accent triple moves: same
+ * grays, same spacing, same shapes, so this is one variable re-point rather
+ * than a second theme.
+ *
+ * Declared *after* the dark block on purpose. `[data-theme="dark"]` and
+ * `[data-mode="label"]` have identical specificity, so source order decides
+ * the light/teal case, and the two-attribute selector below wins the
+ * dark/teal case outright. Six rules, not a theming system.
+ */
+[data-mode="label"],
+[data-mode="review"] {
+  --accent-strong: #0f6e56;
+  --accent: #1d9e75;
+  --accent-soft: #e1f5ee;
+  --accent-contrast: #ffffff;
+}
+
+[data-theme="dark"][data-mode="label"],
+[data-theme="dark"][data-mode="review"] {
+  --accent-strong: #6fd7b3;
+  --accent: #2fbc8d;
+  --accent-soft: #10302a;
+  --accent-contrast: #0f1216;
+}
+
+/* ==========================================================================
+   2. PRIMITIVES
+   ========================================================================== */
 
 * {
   box-sizing: border-box;
@@ -54,6 +191,65 @@ body {
   line-height: 1.55;
 }
 
+/* One focus rule for everything focusable, rather than the two per-component
+   rules that existed before. `:focus-visible` (not `:focus`) so a mouse click
+   does not leave a ring behind, and a knockout shadow underneath so the ring
+   survives on accent-coloured backgrounds. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+  box-shadow: 0 0 0 var(--focus-ring-offset) var(--focus-ring-knockout);
+  border-radius: var(--radius-sm);
+}
+
+/* Screen-reader-only text: present in the accessibility tree, absent from the
+   page. Used by the skip link (which unhides itself on focus), icon-only
+   controls, and live regions. */
+.mlp-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The one exception: something visually hidden until it takes focus. */
+.mlp-visually-hidden-focusable:not(:focus):not(:focus-within) {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Motion is an enhancement, so it is the first thing to go. This has to stay
+   ahead of the component layer only in intent — `!important` is what actually
+   enforces it, because component transitions are declared later. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   3. COMPONENTS
+   ========================================================================== */
+
 .mlp-app {
   min-height: 100vh;
 }
@@ -61,8 +257,8 @@ body {
 .mlp-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
   padding: var(--gap);
 }
 
@@ -248,13 +444,18 @@ pre.mlp-code {
   cursor: pointer;
 }
 .mlp-btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  /* `--accent-strong`, not `--accent`: this is the one place the accent has to
+     carry white text, and the mid tone is a 3.6:1 background — fine behind an
+     icon, not behind a label. */
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
   color: var(--accent-contrast);
   font-weight: 600;
 }
 .mlp-btn:disabled {
-  opacity: 0.5;
+  background: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-text);
   cursor: not-allowed;
 }
 
@@ -305,28 +506,6 @@ pre.mlp-code {
    bias analytics, project wizard. Reuses the card/token system.
    ============================================================ */
 
-.mlp-admin-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 20px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-.mlp-admin-brand {
-  font-weight: 650;
-  color: var(--text);
-  text-decoration: none;
-}
-.mlp-admin-tools {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
 .mlp-key-input {
   width: 180px;
   padding: 6px 10px;
@@ -479,7 +658,7 @@ pre.mlp-code {
   font-size: 12px;
 }
 .mlp-voided {
-  opacity: 0.5;
+  color: var(--disabled-text);
   text-decoration: line-through;
 }
 .mlp-mono {
@@ -685,20 +864,7 @@ pre.mlp-code {
   background: var(--accent-soft);
 }
 
-/* ---- admin nav + template gallery (M5) ---- */
-.mlp-admin-nav {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-}
-.mlp-admin-link {
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 14px;
-}
-.mlp-admin-link:hover {
-  color: var(--accent);
-}
+/* ---- template gallery (M5) ---- */
 .mlp-gallery {
   display: grid;
   grid-template-columns: 240px 1fr;
@@ -707,7 +873,7 @@ pre.mlp-code {
 }
 .mlp-gallery-list {
   position: sticky;
-  top: 76px;
+  top: var(--sticky-top);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -808,7 +974,7 @@ input.mlp-number {
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 24px;
   line-height: 1;
   cursor: pointer;
@@ -875,20 +1041,16 @@ input.mlp-number {
   background: var(--surface);
   cursor: grab;
 }
-.mlp-rank-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
 .mlp-rank-dragging {
   opacity: 0.5;
   border-style: dashed;
 }
 .mlp-rank-num {
   width: 1.5em;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .mlp-rank-grip {
-  color: var(--muted);
+  color: var(--text-muted);
   cursor: grab;
 }
 .mlp-rank-label {
@@ -938,7 +1100,7 @@ input.mlp-number {
   .mlp-builder-preview {
     position: sticky;
     /* Clears the sticky admin bar — same offset the gallery list uses. */
-    top: 76px;
+    top: var(--sticky-top);
     max-height: calc(100vh - 92px);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1013,7 +1175,7 @@ input.mlp-number {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .mlp-palette-item {
   display: block;
@@ -1049,7 +1211,7 @@ input.mlp-number {
   padding: 16px;
   text-align: center;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .mlp-canvas-item {
   border: 1px solid var(--border);
@@ -1067,9 +1229,12 @@ input.mlp-number {
   padding: 8px 10px;
   cursor: grab;
 }
+/* Inset rather than the shared outer ring: this element is flush inside its
+   card, so an outset ring would be clipped by the card's overflow. */
 .mlp-canvas-head:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: -2px;
+  box-shadow: none;
 }
 .mlp-canvas-title {
   flex: 1;
@@ -1078,7 +1243,7 @@ input.mlp-number {
 .mlp-canvas-type {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .mlp-inspector {
   display: flex;
@@ -1126,7 +1291,7 @@ input.mlp-number {
   cursor: pointer;
 }
 .mlp-view-toggle button[aria-pressed="true"] {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: var(--accent-contrast);
 }
 
@@ -1183,16 +1348,6 @@ input.mlp-number {
 .mlp-btn-danger:disabled {
   border-color: var(--border);
   color: var(--text-muted);
-}
-
-/* "Label tasks →" in the admin nav: a button that has to sit among anchors
-   without looking like a stranger. Same type and spacing as .mlp-admin-link,
-   none of the button chrome. */
-.mlp-admin-link-action {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font: inherit;
 }
 
 /* ---- M8: annotator home, exit control, review queue (§7.2, §11) ---- */
@@ -1337,4 +1492,396 @@ input.mlp-number {
   background: var(--surface);
   color: var(--text);
   font: inherit;
+}
+
+/* =========================================================================
+   Admin shell — left rail + command bar (UX plan, phase 2)
+   =========================================================================
+
+   Replaces `.mlp-admin-bar`, which was a horizontal strip of seven text links
+   with no hierarchy and nowhere to grow. The shell is a two-column grid: a rail
+   that owns navigation and identity, and a content column that owns the
+   command bar and the page.
+   ========================================================================= */
+
+.mlp-shell {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  min-height: 100vh;
+  padding-top: var(--mode-bar-h);
+}
+.mlp-shell[data-collapsed="true"] {
+  grid-template-columns: var(--rail-w-collapsed) minmax(0, 1fr);
+}
+
+/* Mode marker. Three pixels along the top edge: readable in peripheral vision,
+   survives dark mode, and costs no layout. It is decorative — the chip in the
+   command bar is what actually names the mode. */
+.mlp-mode-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--mode-bar-h);
+  background: var(--accent);
+  z-index: 30;
+}
+
+.mlp-skip-link {
+  position: absolute;
+  top: calc(var(--mode-bar-h) + var(--space-2));
+  left: var(--space-2);
+  z-index: 40;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--accent-strong);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow-2);
+}
+
+/* ---- rail --------------------------------------------------------------- */
+
+.mlp-rail {
+  position: sticky;
+  top: var(--mode-bar-h);
+  align-self: start;
+  height: calc(100vh - var(--mode-bar-h));
+  overflow: hidden auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.mlp-rail-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  height: 100%;
+  padding: var(--space-3) var(--space-2);
+}
+
+.mlp-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  margin-bottom: var(--space-2);
+  color: var(--text);
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.mlp-rail-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-strong);
+  color: var(--accent-contrast);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mlp-rail-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+}
+
+.mlp-rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  /* The 3px left padding difference is the active bar's slot, reserved on every
+     item so the label does not shift by 3px when an item becomes current. */
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  /* WCAG 2.2 target size. */
+  min-height: 36px;
+  transition: background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+.mlp-rail-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+/* Active: an accent bar on the leading edge plus a tint. Reads at a glance in
+   both the expanded and the collapsed rail, which a bottom border would not. */
+.mlp-rail-item[aria-current="page"] {
+  border-left-color: var(--accent-strong);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.mlp-rail-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.mlp-rail-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mlp-rail-item-action {
+  /* `StartLabeling` renders a <button>; strip the chrome so it sits among the
+     anchors without looking like a stranger. */
+  appearance: none;
+}
+
+.mlp-rail-divider {
+  height: 1px;
+  margin: var(--space-3) var(--space-2);
+  border: none;
+  background: var(--border);
+}
+.mlp-rail-foot {
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+/* Tooltip for the collapsed rail. A real element rather than `title=`, which
+   never appears on keyboard focus. Hidden entirely while the rail is expanded,
+   so it can never fire on a label that is already visible. */
+.mlp-rail-tip {
+  position: absolute;
+  left: calc(100% + var(--space-2));
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 25;
+  display: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+}
+.mlp-shell[data-collapsed="true"] .mlp-rail-item:hover .mlp-rail-tip,
+.mlp-shell[data-collapsed="true"] .mlp-rail-item:focus-visible .mlp-rail-tip {
+  display: block;
+}
+
+/* Collapsed: labels out, icons centred, tooltips in. */
+.mlp-shell[data-collapsed="true"] .mlp-rail-label,
+.mlp-shell[data-collapsed="true"] .mlp-rail-brand-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.mlp-shell[data-collapsed="true"] .mlp-rail-item,
+.mlp-shell[data-collapsed="true"] .mlp-rail-brand {
+  justify-content: center;
+  gap: 0;
+  padding-left: var(--space-1);
+  padding-right: var(--space-2);
+}
+
+/* ---- mobile drawer ------------------------------------------------------ */
+
+.mlp-rail-scrim {
+  justify-content: flex-start;
+}
+.mlp-rail-drawer {
+  width: min(var(--rail-w), 82vw);
+  height: 100%;
+  box-shadow: var(--shadow-3);
+}
+
+/* ---- content column ----------------------------------------------------- */
+
+.mlp-shell-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mlp-cmdbar {
+  position: sticky;
+  top: var(--mode-bar-h);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--cmdbar-h);
+  padding: var(--space-2) var(--space-5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+}
+.mlp-cmdbar-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mlp-cmdbar-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.mlp-cmdbar-title h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mlp-cmdbar-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.mlp-crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.mlp-crumbs li + li::before {
+  content: "/";
+  margin-right: var(--space-1);
+  color: var(--border-strong);
+}
+.mlp-crumbs a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.mlp-crumbs a:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+/* Names the mode in words. This is the primary mode signal; the accent hue is
+   reinforcement, because blue against teal is a plausible confusion under
+   deuteranopia and roughly one in twelve men has some colour vision deficiency. */
+.mlp-mode-chip {
+  flex: none;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---- icon buttons and the key popover ----------------------------------- */
+
+.mlp-icon-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* 32px, comfortably over the 24px WCAG 2.2 minimum target. */
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mlp-icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.mlp-icon-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+/* "A key is set" without spelling the key out. The state is also in the
+   button's accessible name, so this dot is decorative. */
+.mlp-dot {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--ok);
+}
+
+.mlp-popover-anchor {
+  position: relative;
+}
+.mlp-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-2));
+  z-index: 30;
+  width: 280px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+}
+.mlp-popover .mlp-key-input {
+  width: 100%;
+}
+
+/* ---- content ------------------------------------------------------------ */
+
+.mlp-admin-main:focus {
+  /* Focused only by the skip link, never by tabbing — a ring here would be
+     confusing rather than helpful, and the heading is what gets announced. */
+  outline: none;
+}
+
+/* A card whose title is the link. The card is still clickable for a pointer,
+   but the tab stop and the accessible name belong to the anchor. */
+.mlp-card-link {
+  color: var(--text);
+  text-decoration: none;
+}
+.mlp-card-link:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .mlp-shell,
+  .mlp-shell[data-collapsed="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mlp-cmdbar {
+    padding-inline: var(--space-3);
+  }
+  .mlp-admin-main {
+    padding: var(--space-3);
+  }
 }

@@ -13,7 +13,7 @@
 // embedding it inside admin chrome would mean the `?` overlay, `g`, `d` and the
 // digit keys all compete with whatever else is on the page.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { MiniLpClient } from "../../api/client";
 
@@ -42,7 +42,8 @@ export function StartLabeling({
   /** Omit to open the annotator's task landing page instead of one project. */
   projectId?: number;
   apiKey: string;
-  label?: string;
+  /** A node, not just a string: the rail renders it as icon + label + tooltip. */
+  label?: ReactNode;
   className?: string;
   /** Injectable so tests can assert the URL without a jsdom navigation. */
   navigate?: (url: string) => void;

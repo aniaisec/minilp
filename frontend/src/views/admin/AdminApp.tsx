@@ -13,13 +13,13 @@
 // pasted into the header field, so an admin can drive the whole surface with the
 // same key that seeds their curl calls.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { MiniLpClient } from "../../api/client";
+import { AdminShell, type Crumb, type NavKey } from "./AdminShell";
 import { Dashboard } from "./Dashboard";
 import { MarketplacePanel } from "./MarketplacePanel";
 import { ProjectView } from "./ProjectView";
-import { StartLabeling } from "./StartLabeling";
 import { TemplateGallery } from "./TemplateGallery";
 import { Wizard } from "./Wizard";
 import { TemplateEditor } from "./builder/TemplateEditor";
@@ -89,12 +89,28 @@ export function AdminApp() {
   // Parse the route from the path portion only (strip any ?query in the hash).
   const path = hash.split("?")[0];
   const parts = path.replace(/^#\/?/, "").split("/"); // e.g. ["admin","project","3"]
-  let body;
+
+  // One resolution step producing everything the shell needs: which rail item
+  // is current, what the `<h1>` says, and how you got here. Previously the
+  // route only produced a body, and the header had no idea where you were —
+  // which is exactly why nothing in the chrome could tell you.
+  const PROJECTS_CRUMB: Crumb = { label: "Projects", href: "#/admin" };
+  const TEMPLATES_CRUMB: Crumb = { label: "Templates", href: "#/admin/templates" };
+
+  let active: NavKey = "projects";
+  let title = "Projects";
+  let crumbs: Crumb[] = [];
+  let body: ReactNode;
+
   if (parts[1] === "templates" && parts[2] === "new") {
-    body = (
-      <TemplateEditor client={client} onSaved={() => nav("#/admin/templates")} />
-    );
+    active = "templates";
+    title = "New template";
+    crumbs = [TEMPLATES_CRUMB];
+    body = <TemplateEditor client={client} onSaved={() => nav("#/admin/templates")} />;
   } else if (parts[1] === "templates" && parts[2] && parts[3] === "edit") {
+    active = "templates";
+    title = `Edit template #${parts[2]}`;
+    crumbs = [TEMPLATES_CRUMB];
     body = (
       <TemplateEditor
         client={client}
@@ -103,6 +119,8 @@ export function AdminApp() {
       />
     );
   } else if (parts[1] === "templates") {
+    active = "templates";
+    title = "Templates";
     body = (
       <TemplateGallery
         client={client}
@@ -111,17 +129,20 @@ export function AdminApp() {
       />
     );
   } else if (parts[1] === "marketplace") {
+    active = "marketplace";
+    title = "Marketplace";
     body = <MarketplacePanel client={client} />;
   } else if (parts[1] === "new") {
+    active = "new";
+    title = "New project";
+    crumbs = [PROJECTS_CRUMB];
     body = <Wizard client={client} onCreated={(id) => nav(`#/admin/project/${id}`)} />;
   } else if (parts[1] === "project" && parts[2]) {
+    active = "projects";
+    title = `Project #${parts[2]}`;
+    crumbs = [PROJECTS_CRUMB];
     body = (
-      <ProjectView
-        client={client}
-        projectId={Number(parts[2])}
-        apiKey={apiKey}
-        onBack={() => nav("#/admin")}
-      />
+      <ProjectView client={client} projectId={Number(parts[2])} apiKey={apiKey} />
     );
   } else {
     body = (
@@ -135,70 +156,23 @@ export function AdminApp() {
   }
 
   return (
-    <div className="mlp-app mlp-admin">
-      <header className="mlp-admin-bar">
-        <div className="mlp-admin-nav">
-          <a className="mlp-admin-brand" href="#/admin">
-            MiniLP · Admin
-          </a>
-          <a className="mlp-admin-link" href="#/admin">
-            Projects
-          </a>
-          <a className="mlp-admin-link" href="#/admin/templates">
-            Templates
-          </a>
-          <a className="mlp-admin-link" href="#/admin/marketplace">
-            Marketplace
-          </a>
-          <a className="mlp-admin-link" href="#/admin/new">
-            New project
-          </a>
-          {apiKey && (
-            // The review queue is a *reviewer* surface, not an admin one, so it
-            // lives outside the admin hash router — this is a link into it,
-            // carrying the key so no re-auth is needed (M8, §7.2).
-            <a
-              className="mlp-admin-link"
-              href={`${window.location.pathname}?review=1&key=${encodeURIComponent(apiKey)}`}
-              data-testid="admin-review-link"
-            >
-              Review queue
-            </a>
-          )}
-          {apiKey && (
-            <StartLabeling
-              client={client}
-              apiKey={apiKey}
-              label="Label tasks →"
-              className="mlp-admin-link mlp-admin-link-action"
-            />
-          )}
+    <AdminShell
+      client={client}
+      apiKey={apiKey}
+      onApiKeyChange={setApiKey}
+      theme={theme}
+      onThemeChange={setTheme}
+      active={active}
+      title={title}
+      crumbs={crumbs}
+    >
+      {!apiKey && (
+        <div className="mlp-card mlp-muted" style={{ marginBottom: "var(--gap)" }}>
+          Add an <strong>admin</strong> API key from the key button in the header (or open
+          with <code>?key=&lt;key&gt;</code>) to load projects.
         </div>
-        <div className="mlp-admin-tools">
-          <input
-            className="mlp-key-input"
-            type="password"
-            value={apiKey}
-            placeholder="API key"
-            onChange={(e) => setApiKey(e.target.value)}
-          />
-          <button
-            className="mlp-btn"
-            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-          >
-            {theme === "light" ? "🌙" : "☀️"}
-          </button>
-        </div>
-      </header>
-      <main className="mlp-admin-main">
-        {!apiKey && (
-          <div className="mlp-card mlp-muted" style={{ marginBottom: "var(--gap)" }}>
-            Paste an <strong>admin</strong> API key above (or open with{" "}
-            <code>?key=&lt;key&gt;</code>) to load projects.
-          </div>
-        )}
-        {body}
-      </main>
-    </div>
+      )}
+      {body}
+    </AdminShell>
   );
 }

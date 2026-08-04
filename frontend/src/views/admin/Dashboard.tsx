@@ -31,8 +31,10 @@ export function Dashboard({
 
   return (
     <div className="mlp-stack-lg" style={{ maxWidth: "var(--content-xl)" }}>
-      <div className="mlp-actions" style={{ justifyContent: "space-between" }}>
-        <h2>Projects</h2>
+      {/* No heading here: the command bar's `<h1>` already names this screen,
+          and a second "Projects" directly beneath it is noise in the heading
+          outline as well as on the page. */}
+      <div className="mlp-actions" style={{ justifyContent: "flex-end" }}>
         <button className="mlp-btn mlp-btn-primary" onClick={onNew}>
           + New project
         </button>
@@ -44,24 +46,35 @@ export function Dashboard({
       )}
       <div className="mlp-project-grid">
         {projects?.map((p) => (
-          // A div, not a button: the card now contains its own button, and a
-          // button inside a button is invalid HTML that browsers resolve by
-          // dropping one of them — usually the one you wanted.
+          // Not `role="button" tabIndex={0}`, which is what this used to be. A
+          // clickable div announces as a button whose accessible name is the
+          // whole card — every stat, every meta string — and it contains a real
+          // button, which is a nesting a screen reader cannot describe.
+          //
+          // Instead: the *title* is the link. It carries the accessible name
+          // and the tab stop, so the card announces as "Preference run, link".
+          // The card keeps its click handler purely as a mouse convenience, so
+          // the large target still works for people using a pointer.
           <div
             key={p.id}
             className="mlp-card mlp-project-card"
-            role="button"
-            tabIndex={0}
             data-testid={`project-card-${p.id}`}
             onClick={() => onOpen(p.id)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onOpen(p.id);
-              }
-            }}
           >
-            <div className="mlp-project-name">{p.name}</div>
+            <a
+              className="mlp-project-name mlp-card-link"
+              href={`#/admin/project/${p.id}`}
+              onClick={(e) => {
+                // The hash router would handle this on its own, but going
+                // through `onOpen` keeps one navigation path for both surfaces
+                // and lets the caller stay in control (it is injected in tests).
+                e.preventDefault();
+                e.stopPropagation();
+                onOpen(p.id);
+              }}
+            >
+              {p.name}
+            </a>
             {p.description && <div className="mlp-muted">{p.description}</div>}
             <div className="mlp-project-meta mlp-muted">
               K={p.labels_per_unit} · golds {Math.round(p.gold_ratio * 100)}% · template #
