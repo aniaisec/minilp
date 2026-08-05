@@ -1039,16 +1039,17 @@ http://localhost:5173/?review=1&annotator=1&key=dev-admin-key
 - Decide the last escalated unit and watch the depth counter reach 0; the queue
   then shows an empty state that explains what would put something in it.
 
-**The Active learning tab** (project 7, or project 6 for an open batch to rank):
+**The Active learning section** (project 7, or project 6 for an open batch to
+rank). Every project section is its own URL, so this links straight to it:
 
 ```
-http://localhost:5173/#/admin/project/7?key=dev-admin-key
+http://localhost:5173/#/admin/project/7/active-learning?key=dev-admin-key
 ```
 
-- Open the **Active learning** tab. The **Iteration eval curve** card shows
+- The **Iteration eval curve** card shows
   `demo-student` with three rows, gold accuracy climbing v1 → v2 → v3 — the
   same numbers step 3a printed, rendered as a table.
-- Switch to project 6 and the same tab, click **Rank next batch** — a table of
+- Switch to project 6 and the same section, click **Rank next batch** — a table of
   open units appears with disagreement/entropy/score columns; a unit with no
   votes yet shows em-dashes and a score of `0.50`, not zeros.
 - Click **Register checkpoint…**, fill in a name/provider/model, submit — the

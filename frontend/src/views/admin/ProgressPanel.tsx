@@ -1,29 +1,15 @@
 // Progress view (§11): status funnel, per-batch bars, per-variant paired bars
 // (counterbalancing proof), per-key consensus rates, throughput + ETA.
+//
+// Presentational since phase 3 of the UX plan. `ProjectView` owns the fetch,
+// because the project header needs the same funnel on every section — fetching
+// it here as well would have meant two identical requests on this route.
 
-import { useEffect, useState } from "react";
-
-import type { MiniLpClient } from "../../api/client";
 import type { Progress } from "../../api/types";
 import { eta, pct } from "./format";
 import { Bar, PairedBar, Pill, StatCard } from "./widgets";
 
-export function ProgressPanel({ client, projectId }: { client: MiniLpClient; projectId: number }) {
-  const [data, setData] = useState<Progress | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setData(null);
-    setError(null);
-    client
-      .getProgress(projectId)
-      .then(setData)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [client, projectId]);
-
-  if (error) return <div className="mlp-card mlp-error">{error}</div>;
-  if (!data) return <div className="mlp-card">Loading progress…</div>;
-
+export function ProgressPanel({ data }: { data: Progress }) {
   const f = data.funnel;
   const t = data.throughput;
   const variantDenom = Math.max(1, ...data.variants.values.map((v) => v.total));

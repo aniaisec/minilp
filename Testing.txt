@@ -828,10 +828,10 @@ export K=dev-admin-key
 
 
 # ============================================================================
-# 2. THE UI PATH — Judges tab
+# 2. THE UI PATH — Judges section
 # ============================================================================
-# Open the project and click the "Judges" tab:
-#     http://localhost:5173/#/admin/project/<PID>?key=dev-admin-key
+# Open the project's "Judges" section (under People in the project rail):
+#     http://localhost:5173/#/admin/project/<PID>/judges?key=dev-admin-key
 
 # --- A1) A judge is enrolled and shows its caps -----------------------------
 # You should see "demo-mock-judge v1", provider `mock`, annotator #N, 0 labels,

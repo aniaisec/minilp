@@ -71,6 +71,7 @@ export function AdminShell({
   active,
   title,
   crumbs,
+  currentCrumb,
   children,
 }: {
   client: MiniLpClient;
@@ -81,8 +82,12 @@ export function AdminShell({
   active: NavKey;
   /** The page `<h1>`, and the last breadcrumb. */
   title: string;
-  /** Trail *above* the title; the title is appended as the current crumb. */
+  /** Trail *above* the current crumb, which is appended by the shell. */
   crumbs: Crumb[];
+  /** Overrides the last crumb, for screens whose `<h1>` is not the current page
+   *  — inside a project the heading names the project and the last crumb names
+   *  the section (`Projects / Image QA / Units`). Defaults to `title`. */
+  currentCrumb?: string;
   children: ReactNode;
 }) {
   const [collapsedPref, setCollapsedPref] = useState<boolean>(readCollapsed);
@@ -137,8 +142,11 @@ export function AdminShell({
   // a screen-reader user knows which of the two modes they landed in without
   // having to explore the page to find out.
   useEffect(() => {
-    document.title = `${title} · Admin · MiniLP`;
-  }, [title]);
+    // The section goes in front of the project so the two are distinguishable
+    // in a tab strip, where only the first few characters survive.
+    const where = currentCrumb && currentCrumb !== title ? `${currentCrumb} · ${title}` : title;
+    document.title = `${where} · Admin · MiniLP`;
+  }, [title, currentCrumb]);
 
   const toggleCollapsed = useCallback(() => {
     if (collapsed) {
@@ -371,7 +379,7 @@ export function AdminShell({
     </>
   );
 
-  const trail: Crumb[] = [...crumbs, { label: title }];
+  const trail: Crumb[] = [...crumbs, { label: currentCrumb ?? title }];
 
   return (
     <div

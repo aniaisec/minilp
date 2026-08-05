@@ -29,6 +29,12 @@ const SCENARIOS = [
   { name: "dashboard-light", hash: "#/admin", theme: "light", width: 1440 },
   { name: "dashboard-dark", hash: "#/admin", theme: "dark", width: 1440 },
   { name: "project-light", hash: "#/admin/project/1", theme: "light", width: 1440 },
+  { name: "project-dark", hash: "#/admin/project/1", theme: "dark", width: 1440 },
+  // A section that is not the default, to show the secondary rail marking
+  // something other than the first item — and, before phase 3, to show that
+  // the URL could not name a section at all.
+  { name: "project-units", hash: "#/admin/project/1/units", theme: "light", width: 1440 },
+  { name: "project-narrow", hash: "#/admin/project/1", theme: "light", width: 1000 },
   { name: "dashboard-collapsed", hash: "#/admin", theme: "light", width: 1440, collapsed: true },
   { name: "dashboard-narrow", hash: "#/admin", theme: "light", width: 560 },
 ];
@@ -100,6 +106,9 @@ const PAIRS = [
   ["Dashboard — light", "dashboard-light", 1440],
   ["Dashboard — dark", "dashboard-dark", 1440],
   ["Project view — light", "project-light", 1440],
+  ["Project view — dark", "project-dark", 1440],
+  ["Project view — Units section (#/admin/project/1/units)", "project-units", 1440],
+  ["Project view — 1000px, sections folded to a row", "project-narrow", 1000],
   ["Rail collapsed (mlp.navCollapsed = true)", "dashboard-collapsed", 1440],
   ["Narrow viewport — 560px", "dashboard-narrow", 560],
 ];
@@ -148,7 +157,7 @@ writeFileSync(
   <body>
     <h1>MiniLP admin surface — before / after</h1>
     <p class="sub">
-      UX modernization plan, phases 1 (token layer) and 2 (admin shell). Each frame is the real
+      UX modernization plan, phases 1 (token layer), 2 (admin shell) and 3 (project view). Each frame is the real
       application rendered against fixture data, at a 1440×900 viewport unless noted.
       Regenerate with <code>node frontend/scripts/snapshot.mjs after</code>.
     </p>${PAIRS.map(section).join("")}
