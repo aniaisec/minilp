@@ -119,13 +119,19 @@ afterEach(() => {
 // --- the secondary rail -----------------------------------------------------
 
 describe("the project sections", () => {
-  function renderView(tab: Parameters<typeof ProjectView>[0]["tab"] = "progress") {
+  /** Renders, then waits for the header fetch to land. Awaiting it is not
+   *  incidental tidiness: the sections themselves are static, but leaving the
+   *  progress promise in flight resolves it after the test ends, which React
+   *  reports as an un-acted update and which makes the whole file noisy. */
+  async function renderView(tab: Parameters<typeof ProjectView>[0]["tab"] = "progress") {
     getProgress().mockResolvedValue(progress());
-    return render(<ProjectView client={client} projectId={1} apiKey="k" tab={tab} />);
+    const result = render(<ProjectView client={client} projectId={1} apiKey="k" tab={tab} />);
+    await screen.findByText(/units finalized/);
+    return result;
   }
 
-  it("groups the sections into named navigation landmarks", () => {
-    renderView();
+  it("groups the sections into named navigation landmarks", async () => {
+    await renderView();
 
     // The grouping is the point of phase 3, and a grouping that exists only in
     // the pixels is not a grouping for everyone.
@@ -136,15 +142,15 @@ describe("the project sections", () => {
     }
   });
 
-  it("makes every section a link to its own route", () => {
-    renderView();
+  it("makes every section a link to its own route", async () => {
+    await renderView();
 
     expect(screen.getByTestId("tab-units")).toHaveAttribute("href", "#/admin/project/1/units");
     expect(screen.getByTestId("tab-export")).toHaveAttribute("href", "#/admin/project/1/export");
   });
 
-  it("marks the current section with aria-current, and only that one", () => {
-    renderView("units");
+  it("marks the current section with aria-current, and only that one", async () => {
+    await renderView("units");
 
     expect(screen.getByTestId("tab-units")).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("tab-progress")).not.toHaveAttribute("aria-current");
@@ -152,10 +158,9 @@ describe("the project sections", () => {
   });
 
   it("names the panel region after the current section", async () => {
-    renderView("units");
+    await renderView("units");
     // The `<h2>` is what stops the panels' `<h3>`s from hanging under nothing.
-    const region = await screen.findByRole("region", { name: "Units" });
-    expect(region).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Units" })).toBeInTheDocument();
   });
 });
 
@@ -164,28 +169,41 @@ describe("the project sections", () => {
 describe("the project header", () => {
   it("states where the project stands and how far along it is", async () => {
     getProgress().mockResolvedValue(progress());
-    render(<ProjectView client={client} projectId={1} apiKey="k" tab="units" />);
+    // Progress rather than Units: the header is what these tests are about, and
+    // the unit browser's own fetch would settle after the assertions and be
+    // reported as an un-acted update.
+    render(<ProjectView client={client} projectId={1} apiKey="k" tab="progress" />);
 
     // Scoped to the header: "In progress" is also a funnel stat inside the
-    // Progress panel, and a bare text query would happily match either.
-    const status = await screen.findByTestId("project-status");
-    expect(within(status).getByText("In progress")).toBeInTheDocument();
+    // Progress panel, and a bare text query would happily match either. The
+    // container exists during the load too, so wait on its contents, not on it.
+    await waitFor(() =>
+      expect(within(screen.getByTestId("project-status")).getByText("In progress")).toBeInTheDocument(),
+    );
     // 1104 / 1842 — the completion the Progress tab used to keep to itself.
     expect(
-      within(status).getByText(/1104 of 1842 units finalized \(59\.9%\)/),
+      within(screen.getByTestId("project-status")).getByText(
+        /1104 of 1842 units finalized \(59\.9%\)/,
+      ),
     ).toBeInTheDocument();
   });
 
   it("surfaces escalations, which are the thing an admin has to act on", async () => {
     getProgress().mockResolvedValue(progress({ escalated: 6 }));
-    render(<ProjectView client={client} projectId={1} apiKey="k" tab="units" />);
+    // Progress rather than Units: the header is what these tests are about, and
+    // the unit browser's own fetch would settle after the assertions and be
+    // reported as an un-acted update.
+    render(<ProjectView client={client} projectId={1} apiKey="k" tab="progress" />);
 
     expect(await screen.findByText("6 escalated")).toBeInTheDocument();
   });
 
   it("keeps the sections usable when the summary fails to load", async () => {
     getProgress().mockRejectedValue(new Error("503 upstream"));
-    render(<ProjectView client={client} projectId={1} apiKey="k" tab="units" />);
+    // Progress rather than Units: the header is what these tests are about, and
+    // the unit browser's own fetch would settle after the assertions and be
+    // reported as an un-acted update.
+    render(<ProjectView client={client} projectId={1} apiKey="k" tab="progress" />);
 
     expect(await screen.findByText(/Project summary unavailable/)).toBeInTheDocument();
     // A failed header is not a failed page: navigation still works.
@@ -201,11 +219,30 @@ describe("the section in the URL", () => {
     window.location.hash = "#/admin/project/1/units";
     render(<AdminApp />);
 
-    const h1 = await screen.findByRole("heading", { level: 1 });
-    // "Project #1" told an admin nothing they could not read off the URL.
-    expect(h1).toHaveTextContent(PROJECT.name);
+    // `findByRole` alone resolves on the *first* `<h1>`, which is still the
+    // "Project #1" fallback shown while the name is in flight — so this has to
+    // wait for the content, not merely for the element.
+    await waitFor(() =>
+      // "Project #1" told an admin nothing they could not read off the URL.
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(PROJECT.name),
+    );
     await waitFor(() =>
       expect(screen.getByTestId("tab-units")).toHaveAttribute("aria-current", "page"),
+    );
+  });
+
+  it("falls back to the id while the project name is still loading", async () => {
+    // The fallback is deliberate: an empty heading during the fetch would be
+    // worse than a dull one, and a project that 404s never gets a name at all.
+    stubFetch();
+    window.location.hash = "#/admin/project/1/export";
+    render(<AdminApp />);
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Project #1");
+    // Let the in-flight fetches land before the test ends, so their state
+    // updates are not reported against whatever runs next.
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(PROJECT.name),
     );
   });
 
