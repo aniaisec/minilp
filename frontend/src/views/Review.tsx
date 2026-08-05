@@ -200,8 +200,15 @@ export function Review({ client, projectId, exit }: ReviewProps) {
       <div className="mlp-topbar">
         <div className="mlp-topbar-left">
           {exit}
+          {/* The mode named in words. The teal accent is reinforcement; this is
+              the signal (§ UX plan, mode identity). */}
+          <span className="mlp-mode-chip" data-testid="mode-chip">
+            Reviewing
+          </span>
+          {/* The chip beside it already says "Reviewing", so this no longer
+              repeats "Review queue" — it says what is left to do. */}
           <span className="mlp-muted" data-testid="review-depth">
-            Review queue · {depth} waiting
+            {depth} waiting
             {decided > 0 ? ` · ${decided} decided this session` : ""}
           </span>
         </div>

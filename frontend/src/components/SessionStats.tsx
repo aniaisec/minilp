@@ -6,6 +6,13 @@
 // a 0.82 in red would push annotators toward second-guessing correct answers.
 // Only an actual pause (a state change they need to act on) is surfaced loudly,
 // and that is the Annotate view's job, not this bar's.
+//
+// Phase 4 makes this a polite live region, so a labeler using a screen reader
+// hears their count go up instead of having to go looking for it. One detail
+// makes that work: the rate is `aria-hidden`. It is derived from the counts and
+// the wall clock, so it changes on renders that have nothing to do with the
+// session — every keystroke in a free-text box would otherwise re-announce the
+// whole bar. Text in a live region has to change only when something happened.
 
 export interface SessionState {
   submitted: number;
@@ -23,10 +30,20 @@ export function SessionStats({
   const mins = Math.max((Date.now() - session.startedAt) / 60000, 1 / 60);
   const perHour = Math.round((session.submitted / mins) * 60);
   return (
-    <div className="mlp-stats" data-testid="session-stats">
+    <div
+      className="mlp-stats"
+      data-testid="session-stats"
+      role="status"
+      aria-live="polite"
+      // "Labeled: 7" read on its own does not say what it counts, so the region
+      // names itself rather than relying on the surrounding layout.
+      aria-label="Session totals"
+    >
       <span data-testid="stat-submitted">Labeled: {session.submitted}</span>
       <span data-testid="stat-skipped">Skipped: {session.skipped}</span>
-      <span data-testid="stat-rate">{session.submitted > 0 ? `${perHour}/hr` : "—/hr"}</span>
+      <span data-testid="stat-rate" aria-hidden="true">
+        {session.submitted > 0 ? `${perHour}/hr` : "—/hr"}
+      </span>
       {reputation === null ? null : (
         <span data-testid="stat-reputation" title="Rolling quality score (§6.2)">
           Quality: {Math.round(reputation * 100)}%

@@ -156,3 +156,34 @@ export function IconChevronRight(p: IconProps) {
     </Icon>
   );
 }
+
+/* The labeler surface (phase 4) uses these three. */
+
+export function IconHelp(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.2a2.6 2.6 0 1 1 3.2 2.5c-.5.2-.7.6-.7 1.1v.7" />
+      <path d="M12 16.8h.01" />
+    </Icon>
+  );
+}
+
+export function IconExit(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M14 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8" />
+      <path d="m10 12h10" />
+      <path d="m17 9-3 3 3 3" />
+    </Icon>
+  );
+}
+
+export function IconBook(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />
+      <path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5" />
+    </Icon>
+  );
+}

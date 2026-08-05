@@ -357,6 +357,7 @@ export function TemplateBuilder({
                   projectId={0}
                   schema={cleanSchema(schema)}
                   guidelines={schema.description ?? ""}
+                  embedded
                 />
               ) : (
                 <p className="mlp-muted">Fix the errors listed above to see the preview.</p>

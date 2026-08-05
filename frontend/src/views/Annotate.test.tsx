@@ -203,11 +203,15 @@ describe("Annotate — reserved keys (§2.4)", () => {
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   });
 
-  it("'g' toggles the guidelines panel", async () => {
+  it("'g' toggles the guidelines drawer", async () => {
     renderAnnotate(TEXT_SENTIMENT, makeTask(GALLERY[2].payload));
-    await screen.findByTestId("guidelines-body"); // expanded on first task
+    // Expanded on the first task. Since phase 4 the body stays in the DOM and
+    // is hidden, so `aria-controls` on the toggle keeps pointing at something
+    // real — collapsed means not *visible*, not absent.
+    const body = await screen.findByTestId("guidelines-body");
+    expect(body).toBeVisible();
     fireEvent.keyDown(window, { key: "g" });
-    await waitFor(() => expect(screen.queryByTestId("guidelines-body")).toBeNull());
+    await waitFor(() => expect(screen.getByTestId("guidelines-body")).not.toBeVisible());
   });
 
   it("'u' undoes the last selection", async () => {

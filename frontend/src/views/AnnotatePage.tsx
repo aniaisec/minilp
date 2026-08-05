@@ -103,6 +103,7 @@ export function AnnotatePage() {
       annotatorId={cfg.annotator}
       projectId={cfg.project}
       schema={template.schema}
+      projectName={project.name}
       guidelines={project.guidelines_md ?? ""}
       homeHref={homeUrl(cfg.annotator, cfg.key)}
     />
