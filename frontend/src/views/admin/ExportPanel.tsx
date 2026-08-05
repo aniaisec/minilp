@@ -6,6 +6,7 @@
 
 import { useCallback, useState } from "react";
 
+import { Button, Card, ErrorState } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { ExportFormat } from "../../api/types";
 
@@ -101,8 +102,7 @@ export function ExportPanel({
 
   return (
     <div className="mlp-stack-lg" data-testid="export-panel">
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Export (§10)</h3>
+      <Card headingLevel={3} title="Export (§10)">
         <label className="mlp-block-label">
           Format
           <select
@@ -125,27 +125,18 @@ export function ExportPanel({
         <p className="mlp-muted">{active.blurb}</p>
 
         <div className="mlp-actions">
-          <button
-            className="mlp-btn"
-            disabled={busy}
-            data-testid="export-preview"
-            onClick={() => void run()}
-          >
+          <Button disabled={busy} data-testid="export-preview" onClick={() => void run()}>
             {busy ? "Building…" : "Preview"}
-          </button>
-          <button
-            className="mlp-btn mlp-btn-primary"
-            data-testid="export-download"
-            onClick={() => void download()}
-          >
+          </Button>
+          <Button variant="primary" data-testid="export-download" onClick={() => void download()}>
             Download .jsonl
-          </button>
+          </Button>
         </div>
 
         {error && (
-          <div className="mlp-error-text" data-testid="export-error" style={{ marginTop: 10 }}>
+          <ErrorState title="The export failed" inline data-testid="export-error">
             {error}
-          </div>
+          </ErrorState>
         )}
 
         {rowCount !== null && (
@@ -159,18 +150,16 @@ export function ExportPanel({
             {preview}
           </pre>
         )}
-      </section>
+      </Card>
 
-      <section className="mlp-card" data-testid="bundle-export-panel">
-        <h3 style={{ marginTop: 0 }}>Marketplace bundle (§12, M10)</h3>
-        <p className="mlp-muted">
-          The template, enrolled judge configs, and this project's config (guidelines, overlap,
-          gold ratio, routing pipeline) as one shareable JSON bundle — a starter kit for a fresh
-          instance. Units and labels stay behind; use the format above for those.
-        </p>
+      <Card
+        headingLevel={3}
+        data-testid="bundle-export-panel"
+        title="Marketplace bundle (§12, M10)"
+        description="The template, enrolled judge configs, and this project's config (guidelines, overlap, gold ratio, routing pipeline) as one shareable JSON bundle — a starter kit for a fresh instance. Units and labels stay behind; use the format above for those."
+      >
         <div className="mlp-actions">
-          <button
-            className="mlp-btn"
+          <Button
             disabled={bundleBusy}
             data-testid="bundle-export-download"
             onClick={async () => {
@@ -194,14 +183,14 @@ export function ExportPanel({
             }}
           >
             {bundleBusy ? "Building…" : "Download bundle"}
-          </button>
+          </Button>
         </div>
         {bundleError && (
-          <div className="mlp-error-text" data-testid="bundle-export-error" style={{ marginTop: 10 }}>
+          <ErrorState title="The bundle could not be built" inline data-testid="bundle-export-error">
             {bundleError}
-          </div>
+          </ErrorState>
         )}
-      </section>
+      </Card>
     </div>
   );
 }

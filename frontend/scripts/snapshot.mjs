@@ -79,6 +79,33 @@ const SCENARIOS = [
     width: 1440,
     clicks: ["btn-help"],
   },
+
+  // --- phase 5: the shared primitives -------------------------------------
+  //
+  // The specimen sheet is markup rather than a route (see src/snapshot/gallery
+  // .tsx for why it is written against class names). On the "before" tree none
+  // of the variant, size or state rules exist, so every button in the frame
+  // renders identically — which is the comparison.
+  { name: "components-light", view: "gallery", hash: "", theme: "light", width: 1100 },
+  { name: "components-dark", view: "gallery", hash: "", theme: "dark", width: 1100 },
+
+  // The densest real screen: a table with a per-row action, three cards with
+  // headers, and the full run of button variants.
+  { name: "project-judges", hash: "#/admin/project/1/judges", theme: "light", width: 1440 },
+  { name: "project-judges-dark", hash: "#/admin/project/1/judges", theme: "dark", width: 1440 },
+
+  // Empty and error, on real panels rather than in isolation. `fixtures: empty`
+  // drains the lists; the roster route has no fixture in either set, so it 404s
+  // and the panel renders whatever it does with a failed fetch.
+  {
+    name: "judges-empty",
+    hash: "#/admin/project/1/judges",
+    theme: "light",
+    width: 1440,
+    fixtures: "empty",
+  },
+  { name: "dashboard-empty", hash: "#/admin", theme: "light", width: 1440, fixtures: "empty" },
+  { name: "roster-error", hash: "#/admin/project/1/roster", theme: "light", width: 1440 },
 ];
 
 const result = await viteBuild({
@@ -157,6 +184,13 @@ const PAIRS = [
   ["Labeler surface — dark", "annotate-dark", 1440],
   ["Labeler surface — 380px (WCAG reflow)", "annotate-narrow", 380],
   ["Labeler surface — hotkey dialog", "annotate-hotkeys", 1440],
+  ["Primitives — buttons, card headers, table, states (light)", "components-light", 1100],
+  ["Primitives — buttons, card headers, table, states (dark)", "components-dark", 1100],
+  ["Judges section — table, card headers, button variants", "project-judges", 1440],
+  ["Judges section — dark", "project-judges-dark", 1440],
+  ["Empty state — no judges enrolled", "judges-empty", 1440],
+  ["Empty state — no projects", "dashboard-empty", 1440],
+  ["Error state — the roster fetch failed", "roster-error", 1440],
 ];
 
 const section = ([heading, name, width]) => `
@@ -203,9 +237,9 @@ writeFileSync(
   <body>
     <h1>MiniLP — before / after</h1>
     <p class="sub">
-      UX modernization plan, phases 1 (token layer), 2 (admin shell), 3 (project view) and
-      4 (labeler surface). Each frame is the real application rendered against fixture data,
-      at a 1440×900 viewport unless noted.
+      UX modernization plan, phases 1 (token layer), 2 (admin shell), 3 (project view),
+      4 (labeler surface) and 5 (component polish). Each frame is the real application
+      rendered against fixture data, at a 1440×900 viewport unless noted.
       Regenerate with <code>node frontend/scripts/snapshot.mjs after</code>.
     </p>${PAIRS.map(section).join("")}
   </body>

@@ -107,7 +107,7 @@ export function Canvas({
             <span className="mlp-canvas-type">{item.type}</span>
             <button
               type="button"
-              className="mlp-btn mlp-btn-tiny"
+              className="mlp-btn mlp-btn-sm"
               aria-label={`Move up: ${item.type}`}
               disabled={i === 0}
               data-testid={`${testId}-up-${i}`}
@@ -120,7 +120,7 @@ export function Canvas({
             </button>
             <button
               type="button"
-              className="mlp-btn mlp-btn-tiny"
+              className="mlp-btn mlp-btn-sm"
               aria-label={`Move down: ${item.type}`}
               disabled={i === items.length - 1}
               data-testid={`${testId}-down-${i}`}
@@ -133,7 +133,7 @@ export function Canvas({
             </button>
             <button
               type="button"
-              className="mlp-btn mlp-btn-tiny"
+              className="mlp-btn mlp-btn-sm"
               aria-label={`Remove: ${item.type}`}
               data-testid={`${testId}-remove-${i}`}
               onClick={(e) => {

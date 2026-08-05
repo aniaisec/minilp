@@ -256,7 +256,7 @@ export function TemplateBuilder({
                 <h3 style={{ marginTop: 0 }}>Canvas</h3>
                 <button
                   type="button"
-                  className="mlp-btn mlp-btn-tiny"
+                  className="mlp-btn mlp-btn-sm"
                   data-testid="select-layout"
                   onClick={() => setSelection({ kind: "layout" })}
                 >

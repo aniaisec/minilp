@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { Bias, BiasGroup, Distribution } from "../../api/types";
 import { ci, pct, ranked, total } from "./format";
@@ -11,15 +12,16 @@ import { Bar, Pill, StatCard } from "./widgets";
 function GroupCard({ title, g }: { title: string; g: BiasGroup }) {
   if (g.n_positional_labels === 0) {
     return (
-      <div className="mlp-card">
-        <h3>{title}</h3>
-        <p className="mlp-muted">No positional labels yet.</p>
-      </div>
+      <Card headingLevel={3} title={title}>
+        <EmptyState title="No positional labels yet">
+          Order bias is only measurable once labels exist on units that were shown in more than
+          one variant order.
+        </EmptyState>
+      </Card>
     );
   }
   return (
-    <div className="mlp-card">
-      <h3>{title}</h3>
+    <Card headingLevel={3} title={title}>
       <div className="mlp-stat-row">
         <StatCard label="Prefer first (CI)" value={ci(g.prefer_first_rate)} />
         <StatCard
@@ -28,29 +30,22 @@ function GroupCard({ title, g }: { title: string; g: BiasGroup }) {
           sub={`${g.n_positional_labels} labels`}
         />
       </div>
-      <table className="mlp-table">
-        <thead>
-          <tr>
-            <th>Annotator</th>
-            <th>first</th>
-            <th>second</th>
-            <th>prefer-first (CI)</th>
-            <th>bias</th>
+      <Table
+        className="mlp-table-spaced"
+        caption={`${title} — per-annotator preference for the first-shown option`}
+        columns={["Annotator", "first", "second", "prefer-first (CI)", "bias"]}
+      >
+        {g.annotators.map((a) => (
+          <tr key={a.annotator_id}>
+            <td className="mlp-mono">#{a.annotator_id}</td>
+            <td>{a.first}</td>
+            <td>{a.second}</td>
+            <td>{ci(a.preference)}</td>
+            <td>{a.bias_score?.toFixed(2) ?? "—"}</td>
           </tr>
-        </thead>
-        <tbody>
-          {g.annotators.map((a) => (
-            <tr key={a.annotator_id}>
-              <td className="mlp-mono">#{a.annotator_id}</td>
-              <td>{a.first}</td>
-              <td>{a.second}</td>
-              <td>{ci(a.preference)}</td>
-              <td>{a.bias_score?.toFixed(2) ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </Table>
+    </Card>
   );
 }
 
@@ -71,8 +66,22 @@ export function BiasPanel({ client, projectId }: { client: MiniLpClient; project
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [client, projectId]);
 
-  if (error) return <div className="mlp-card mlp-error">{error}</div>;
-  if (!bias || !dist) return <div className="mlp-card">Loading analytics…</div>;
+  if (error)
+    return (
+      <Card>
+        <ErrorState title="Could not load bias analytics" data-testid="bias-error">
+          {error}
+        </ErrorState>
+      </Card>
+    );
+  if (!bias || !dist)
+    return (
+      <Card>
+        <p className="mlp-muted" role="status">
+          Loading analytics…
+        </p>
+      </Card>
+    );
 
   const os = bias.order_sensitivity;
 
@@ -81,17 +90,18 @@ export function BiasPanel({ client, projectId }: { client: MiniLpClient; project
       <GroupCard title="Humans — order bias" g={bias.humans} />
       <GroupCard title="Judges — order bias" g={bias.judges} />
 
-      <section className="mlp-card">
-        <h3>
-          Order sensitivity{" "}
-          {os.flip_rate !== null && (
-            <Pill tone={os.flip_rate > 0 ? "warn" : "ok"}>{pct(os.flip_rate)} flip</Pill>
-          )}
-        </h3>
-        <p className="mlp-muted">
-          Units whose canonical winner changes across variant presentations — candidates for extra
-          labels or review (§9).
-        </p>
+      <Card
+        headingLevel={3}
+        title={
+          <>
+            Order sensitivity{" "}
+            {os.flip_rate !== null && (
+              <Pill tone={os.flip_rate > 0 ? "warn" : "ok"}>{pct(os.flip_rate)} flip</Pill>
+            )}
+          </>
+        }
+        description="Units whose canonical winner changes across variant presentations — candidates for extra labels or review (§9)."
+      >
         <div className="mlp-stat-row">
           <StatCard label="Measurable units" value={os.measurable_units} />
           <StatCard label="Flipped units" value={os.flipped_units} />
@@ -101,11 +111,18 @@ export function BiasPanel({ client, projectId }: { client: MiniLpClient; project
             Flipped: {os.units.filter((u) => u.flipped).map((u) => `#${u.unit_id}`).join(", ")}
           </p>
         )}
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3>Label distribution</h3>
-        <p className="mlp-muted">Canonical answers per key across all valid labels (§11).</p>
+      <Card
+        headingLevel={3}
+        title="Label distribution"
+        description="Canonical answers per key across all valid labels (§11)."
+      >
+        {Object.keys(dist.keys).length === 0 && (
+          <EmptyState title="No labels to distribute yet" data-testid="dist-empty">
+            Once valid labels exist, their canonical answers are broken down per key here.
+          </EmptyState>
+        )}
         {Object.entries(dist.keys).map(([key, k]) => {
           const denom = total(k.overall) || 1;
           return (
@@ -125,7 +142,7 @@ export function BiasPanel({ client, projectId }: { client: MiniLpClient; project
             </div>
           );
         })}
-      </section>
+      </Card>
     </div>
   );
 }

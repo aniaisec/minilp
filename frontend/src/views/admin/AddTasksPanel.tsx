@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type {
   Batch,
@@ -128,18 +129,33 @@ export function AddTasksPanel({
     }
   }
 
-  if (!project) return <div className="mlp-card">{error ?? "Loading…"}</div>;
+  if (!project)
+    return (
+      <Card>
+        {error ? (
+          <ErrorState title="Could not load this project" data-testid="add-tasks-load-error">
+            {error}
+          </ErrorState>
+        ) : (
+          <p className="mlp-muted" role="status">
+            Loading project…
+          </p>
+        )}
+      </Card>
+    );
 
   return (
     <div className="mlp-stack-lg" data-testid="add-tasks-panel">
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Add tasks</h3>
-        <p className="mlp-muted">
-          Appends a batch to this live project — no recreation, no downtime. Each
-          new unit gets its own balanced set of {project.labels_per_unit} slots
-          (§2.7), and joins the queue at its declared priority.
-        </p>
-        {error && <div className="mlp-error">{error}</div>}
+      <Card
+        headingLevel={3}
+        title="Add tasks"
+        description={`Appends a batch to this live project — no recreation, no downtime. Each new unit gets its own balanced set of ${project.labels_per_unit} slots (§2.7), and joins the queue at its declared priority.`}
+      >
+        {error && (
+          <ErrorState title="The upload failed" inline data-testid="add-tasks-error">
+            {error}
+          </ErrorState>
+        )}
 
         <div className="mlp-filters" style={{ marginBottom: 10 }}>
           <label>
@@ -237,14 +253,14 @@ export function AddTasksPanel({
         )}
 
         <div className="mlp-actions" style={{ marginTop: 10 }}>
-          <button
-            className="mlp-btn mlp-btn-primary"
+          <Button
+            variant="primary"
             disabled={busy || !content.trim()}
             data-testid="add-upload"
             onClick={() => void upload()}
           >
             {busy ? "Uploading…" : "Add tasks"}
-          </button>
+          </Button>
         </div>
 
         {report && (
@@ -264,33 +280,31 @@ export function AddTasksPanel({
             )}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Batches</h3>
-        <table className="mlp-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Name</th>
-              <th>Source</th>
-              <th>Units</th>
-              <th>Rejected</th>
+      <Card headingLevel={3} title="Batches">
+        <Table
+          caption="Batches of units added to this project"
+          columns={["#", "Name", "Source", "Units", "Rejected"]}
+          isEmpty={batches.length === 0}
+          empty={
+            <EmptyState title="No batches yet" data-testid="add-tasks-batches-empty">
+              Every upload lands as one batch. Add your first above and it appears here with its
+              ingested and rejected counts.
+            </EmptyState>
+          }
+        >
+          {batches.map((b) => (
+            <tr key={b.id}>
+              <td>{b.id}</td>
+              <td>{b.name ?? "—"}</td>
+              <td className="mlp-muted">{b.source_filename ?? "—"}</td>
+              <td>{b.unit_count}</td>
+              <td>{b.rejected_count}</td>
             </tr>
-          </thead>
-          <tbody>
-            {batches.map((b) => (
-              <tr key={b.id}>
-                <td>{b.id}</td>
-                <td>{b.name ?? "—"}</td>
-                <td className="mlp-muted">{b.source_filename ?? "—"}</td>
-                <td>{b.unit_count}</td>
-                <td>{b.rejected_count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+          ))}
+        </Table>
+      </Card>
     </div>
   );
 }

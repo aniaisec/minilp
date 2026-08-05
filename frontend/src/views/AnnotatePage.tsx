@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Card, ErrorState } from "../components/ui";
 import { MiniLpClient } from "../api/client";
 import type { Project, Template } from "../api/types";
 import { Annotate } from "./Annotate";
@@ -82,9 +83,9 @@ export function AnnotatePage() {
   if (error) {
     return (
       <div className="mlp-annotate" style={{ maxWidth: "var(--content-md)" }}>
-        <div className="mlp-card" style={{ borderColor: "var(--danger)" }}>
-          {error}
-        </div>
+        <Card>
+          <ErrorState title="Could not start labeling">{error}</ErrorState>
+        </Card>
       </div>
     );
   }
@@ -92,7 +93,11 @@ export function AnnotatePage() {
   if (!project || !template) {
     return (
       <div className="mlp-annotate" style={{ maxWidth: "var(--content-md)" }}>
-        <div className="mlp-card">Loading project…</div>
+        <Card>
+          <p className="mlp-muted" role="status">
+            Loading project…
+          </p>
+        </Card>
       </div>
     );
   }

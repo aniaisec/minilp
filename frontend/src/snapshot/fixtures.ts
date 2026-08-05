@@ -266,12 +266,161 @@ export const LABEL_TASK = {
 };
 
 /** Route table for the fetch stub: first matching pattern wins. */
+// The judges section (phase 5). It is the densest screen in the admin surface —
+// a table with a per-row action, three cards with headers, and a set of buttons
+// that spans every variant — which is exactly why it is the one worth a frame.
+export const ENROLLED_JUDGES = {
+  project_id: 1,
+  judges: [
+    {
+      judge_config_id: 1,
+      annotator_id: 91,
+      display_name: "catalogue-grader v3",
+      provider: "anthropic",
+      model_id: "claude-sonnet-4",
+      prompt_version: 3,
+      budget: { project_usd: 40, daily_usd: 12 },
+      priced: true,
+      price_source: "table:claude-sonnet-4",
+      spend: { cost_usd: 27.42, daily_usd: 8.15, tokens: 1_284_900, labels: 1631, cache_hits: 402 },
+    },
+    {
+      judge_config_id: 2,
+      annotator_id: 92,
+      display_name: "local-ft v2",
+      provider: "openai_compatible",
+      model_id: "furniture-ft-v2",
+      prompt_version: 2,
+      budget: null,
+      // Unpriced on purpose: the "unpriced, not $0.00" distinction is one of the
+      // things a reviewer should be able to see in the frame.
+      priced: false,
+      price_source: null,
+      spend: { cost_usd: 0, daily_usd: 0, tokens: 318_400, labels: 407, cache_hits: 0 },
+    },
+  ],
+};
+
+export const JUDGE_CONFIGS = [
+  { id: 1, name: "catalogue-grader", provider: "anthropic", model_id: "claude-sonnet-4", prompt_version: 3 },
+  { id: 2, name: "local-ft", provider: "openai_compatible", model_id: "furniture-ft-v2", prompt_version: 2 },
+  { id: 3, name: "strict-framing", provider: "openai", model_id: "gpt-4o-mini", prompt_version: 1 },
+];
+
+export const COSTS = {
+  project_id: 1,
+  totals: {
+    cost_usd: 27.42,
+    cost_per_judge_label: 0.0134,
+    judge_labels: 2038,
+    human_labels: 2143,
+    cache_hit_rate: 0.197,
+    tokens: 1_603_300,
+  },
+  judges: [
+    {
+      annotator_id: 91,
+      display_name: "catalogue-grader v3",
+      labels: 1631,
+      cost_usd: 27.42,
+      cost_per_label: 0.0168,
+      cache_hit_rate: 0.246,
+      avg_latency_ms: 1840,
+    },
+    {
+      annotator_id: 92,
+      display_name: "local-ft v2",
+      labels: 407,
+      cost_usd: 0,
+      cost_per_label: 0,
+      cache_hit_rate: 0,
+      avg_latency_ms: 312,
+    },
+  ],
+};
+
+export const JUDGE_RUNS = [
+  {
+    id: 18,
+    project_id: 1,
+    judge_config_id: 1,
+    annotator_id: 91,
+    dry_run: false,
+    status: "completed",
+    stopped_reason: "budget_project",
+    slots_attempted: 500,
+    labels_written: 486,
+    cache_hits: 121,
+    tokens_in: 402_000,
+    tokens_out: 38_400,
+    cost_usd: 9.14,
+    estimated_cost_usd: null,
+  },
+  {
+    id: 17,
+    project_id: 1,
+    judge_config_id: 1,
+    annotator_id: 91,
+    dry_run: true,
+    status: "completed",
+    stopped_reason: "exhausted",
+    slots_attempted: 500,
+    labels_written: 0,
+    cache_hits: 0,
+    tokens_in: 398_100,
+    tokens_out: 0,
+    cost_usd: null,
+    estimated_cost_usd: 9.06,
+  },
+];
+
 export const ROUTES: [RegExp, unknown][] = [
   [/\/api\/projects\/\d+\/progress/, PROGRESS],
   [/\/api\/projects\/\d+\/batches/, BATCHES],
   [/\/api\/projects\/\d+\/units/, UNITS],
+  [/\/api\/projects\/\d+\/judges/, ENROLLED_JUDGES],
+  [/\/api\/projects\/\d+\/judge-runs/, JUDGE_RUNS],
+  [/\/api\/projects\/\d+\/analytics\/costs/, COSTS],
   [/\/api\/projects\/\d+$/, { ...PROJECTS[0], config: {} }],
   [/\/api\/projects$/, PROJECTS],
+  [/\/api\/judges\/providers/, { providers: ["mock", "anthropic", "openai", "openai_compatible"] }],
+  [/\/api\/judges$/, JUDGE_CONFIGS],
+  [/\/api\/webhooks/, []],
   [/\/api\/templates$/, TEMPLATES],
+  [/\/api\/me:annotator/, { id: 42, display_name: "you" }],
+];
+
+// The same surface with nothing in it. One override rather than a second
+// fixture file: the empty state is a property of the *panel*, and swapping the
+// data underneath the real panel is the only way to see the real thing.
+export const EMPTY_ROUTES: [RegExp, unknown][] = [
+  // A zeroed funnel rather than no fixture at all: the point of the empty
+  // scenarios is the empty state, and a header reading "summary unavailable"
+  // beside it would put an unrelated failure in the frame.
+  [
+    /\/api\/projects\/\d+\/progress/,
+    {
+      ...PROGRESS,
+      funnel: { pending: 0, in_progress: 0, labeled: 0, finalized: 0, total: 0, escalated: 0 },
+      slots: { open: 0, leased: 0, filled: 0, voided: 0 },
+      labels_total: 0,
+      batches: [],
+      variants: { dimension: null, balanced: true, values: [] },
+      consensus: { complete_units: 0, keys: {} },
+      throughput: { labels_per_hour: 0, eta_hours: null, remaining_slots: 0 },
+    },
+  ],
+  [/\/api\/projects\/\d+\/batches/, []],
+  [/\/api\/projects\/\d+\/units/, []],
+  [/\/api\/projects\/\d+\/annotators/, { project_id: 1, count: 0, annotators: [] }],
+  [/\/api\/projects\/\d+\/judges/, { project_id: 1, judges: [] }],
+  [/\/api\/projects\/\d+\/judge-runs/, []],
+  [/\/api\/projects\/\d+\/analytics\/costs/, { ...COSTS, judges: [] }],
+  [/\/api\/projects\/\d+$/, { ...PROJECTS[0], config: {} }],
+  [/\/api\/projects$/, []],
+  [/\/api\/judges\/providers/, { providers: ["mock"] }],
+  [/\/api\/judges$/, []],
+  [/\/api\/webhooks/, []],
+  [/\/api\/templates$/, []],
   [/\/api\/me:annotator/, { id: 42, display_name: "you" }],
 ];

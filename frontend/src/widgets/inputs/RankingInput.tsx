@@ -97,7 +97,7 @@ export function RankingInput({ input, value, onChange }: InputWidgetProps) {
             <span className="mlp-rank-actions">
               <button
                 type="button"
-                className="mlp-btn mlp-btn-tiny"
+                className="mlp-btn mlp-btn-sm"
                 aria-label={`Move ${item} up`}
                 disabled={i === 0}
                 data-testid={`${input.id}-up-${item}`}
@@ -107,7 +107,7 @@ export function RankingInput({ input, value, onChange }: InputWidgetProps) {
               </button>
               <button
                 type="button"
-                className="mlp-btn mlp-btn-tiny"
+                className="mlp-btn mlp-btn-sm"
                 aria-label={`Move ${item} down`}
                 disabled={i === order.length - 1}
                 data-testid={`${input.id}-down-${item}`}

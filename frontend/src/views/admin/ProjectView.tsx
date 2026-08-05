@@ -16,6 +16,7 @@
 
 import { useEffect, useId, useState } from "react";
 
+import { Card, ErrorState } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { Progress } from "../../api/types";
 import { ActiveLearningPanel } from "./ActiveLearningPanel";
@@ -180,13 +181,19 @@ export function ProjectView({
 
           {tab === "progress" &&
             (progressError ? (
-              <div className="mlp-card mlp-error">{progressError}</div>
+              <Card>
+                <ErrorState title="Could not load progress" data-testid="progress-error">
+                  {progressError}
+                </ErrorState>
+              </Card>
             ) : progress ? (
               <ProgressPanel data={progress} />
             ) : (
-              <div className="mlp-card" role="status">
-                Loading progress…
-              </div>
+              <Card>
+                <p className="mlp-muted" role="status">
+                  Loading progress…
+                </p>
+              </Card>
             ))}
           {tab === "units" && <UnitBrowser client={client} projectId={projectId} />}
           {tab === "bias" && <BiasPanel client={client} projectId={projectId} />}

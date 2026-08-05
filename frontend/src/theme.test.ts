@@ -74,13 +74,26 @@ const COMBOS = {
 
 describe("token layer", () => {
   it("defines every token it references", () => {
-    const defined = new Set(Object.keys(resolve(light, dark, teal, tealDark)));
+    // Two sources count as "defined". The token layer, which is where a value
+    // that crosses component boundaries belongs — and any component-scoped
+    // custom property declared elsewhere in the file, which is how the button
+    // size scale (`--btn-h` and friends, set on `.mlp-btn`) and the table's
+    // `--table-sticky-top` work. Those deliberately are *not* global tokens:
+    // they only mean anything inside the component that sets them.
+    //
+    // Accepting both still catches the failure this test exists for — a `var()`
+    // naming something that is declared nowhere at all, which is what the
+    // `--muted` typos below were.
+    const defined = new Set([
+      ...Object.keys(resolve(light, dark, teal, tealDark)),
+      ...Array.from(css.matchAll(/^\s*(--[\w-]+)\s*:/gm), (m) => m[1]),
+    ]);
     const referenced = new Set(
       Array.from(css.matchAll(/var\((--[\w-]+)/g), (m) => m[1]),
     );
     // Two properties are supplied per-element by a widget rather than declared
-    // in the token layer, and both have a fallback in the rule that reads them:
-    // `--panel-count` (panel-group) and `--grid-ratio` (the template's own
+    // in the stylesheet at all, and both have a fallback in the rule that reads
+    // them: `--panel-count` (panel-group) and `--grid-ratio` (the template's own
     // split/columns ratio, passed as data so a media query can still fold the
     // grid — an inline `grid-template-columns` could not be overridden).
     referenced.delete("--panel-count");

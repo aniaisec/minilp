@@ -13,7 +13,8 @@ import App from "../App";
 import { Annotate } from "../views/Annotate";
 import type { TaskClient } from "../api/client";
 import type { SubmitRequest, Task, TemplateSchema } from "../api/types";
-import { LABEL_GUIDELINES, LABEL_SCHEMA, LABEL_TASK, ROUTES } from "./fixtures";
+import { EMPTY_ROUTES, LABEL_GUIDELINES, LABEL_SCHEMA, LABEL_TASK, ROUTES } from "./fixtures";
+import { Gallery } from "./gallery";
 
 declare global {
   interface Window {
@@ -21,11 +22,17 @@ declare global {
       hash: string;
       /** Which surface to mount. Admin routes through `App`; the labeler view is
        *  mounted directly, since its config lives in the query string and a
-       *  `file://` document cannot reliably carry one. */
-      view?: "admin" | "annotate";
+       *  `file://` document cannot reliably carry one. `gallery` is the phase-5
+       *  specimen sheet, which is markup rather than a route. */
+      view?: "admin" | "annotate" | "gallery";
       theme?: "light" | "dark";
       width?: number;
       collapsed?: boolean;
+      /** Which fixture set answers the stubbed fetch. `empty` drains every list
+       *  so the real panels render their real empty states; omitting the flag
+       *  means the populated set. A route with no fixture in either set 404s,
+       *  which is how the error-state scenarios are produced. */
+      fixtures?: "populated" | "empty";
       /** `data-testid`s clicked once the surface has loaded, in order — used to
        *  reach a state that is otherwise only reachable by interaction (a filled
        *  answer, an open dialog). */
@@ -38,9 +45,11 @@ const snap = window.__SNAP__ ?? { hash: "#/admin" };
 
 // Stand in for the backend. Anything unmatched 404s rather than hanging, so a
 // missing fixture shows up as a visible error state instead of a stuck spinner.
+const routes = snap.fixtures === "empty" ? EMPTY_ROUTES : ROUTES;
+
 window.fetch = (input: RequestInfo | URL): Promise<Response> => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  for (const [pattern, body] of ROUTES) {
+  for (const [pattern, body] of routes) {
     if (pattern.test(url)) {
       return Promise.resolve(
         new Response(JSON.stringify(body), {
@@ -96,7 +105,13 @@ const labelClient: TaskClient = {
 
 const root = createRoot(document.getElementById("root")!);
 
-if (snap.view === "annotate") {
+if (snap.view === "gallery") {
+  // No shell, so no theme toggle to click — set the attribute the shells would
+  // have set. `data-mode` too, or the accent stays at its unmoded default.
+  document.documentElement.setAttribute("data-theme", snap.theme ?? "light");
+  document.documentElement.setAttribute("data-mode", "admin");
+  root.render(<Gallery />);
+} else if (snap.view === "annotate") {
   root.render(
     <Annotate
       client={labelClient}

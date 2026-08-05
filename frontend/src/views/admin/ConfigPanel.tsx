@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Button, Card, ErrorState } from "../../components/ui";
 import { ApiError, type MiniLpClient } from "../../api/client";
 import type { Project, ProjectPatch, Template, TemplateSchema } from "../../api/types";
 import { TemplateBuilder } from "./builder/TemplateBuilder";
@@ -118,7 +119,19 @@ export function ConfigPanel({
   };
 
   if (!project) {
-    return <div className="mlp-card">{errors.length ? errors.join("; ") : "Loading…"}</div>;
+    return (
+      <Card>
+        {errors.length ? (
+          <ErrorState title="Could not load this project" data-testid="config-load-error">
+            {errors.join("; ")}
+          </ErrorState>
+        ) : (
+          <p className="mlp-muted" role="status">
+            Loading configuration…
+          </p>
+        )}
+      </Card>
+    );
   }
 
   const set = (patch: ProjectPatch) => setForm((f) => ({ ...f, ...patch }));
@@ -126,13 +139,15 @@ export function ConfigPanel({
   return (
     <div className="mlp-stack-lg" data-testid="config-panel">
       {errors.length > 0 && (
-        <div className="mlp-card mlp-error" data-testid="config-errors">
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {errors.map((e) => (
-              <li key={e}>{e}</li>
-            ))}
-          </ul>
-        </div>
+        <Card>
+          <ErrorState title="Configuration was not saved" data-testid="config-errors">
+            <ul style={{ margin: 0, paddingLeft: 18, textAlign: "left" }}>
+              {errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          </ErrorState>
+        </Card>
       )}
       {note && (
         <div className="mlp-card" data-testid="config-note">
@@ -140,8 +155,7 @@ export function ConfigPanel({
         </div>
       )}
 
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Project configuration</h3>
+      <Card headingLevel={3} title="Project configuration">
         <label className="mlp-block-label">
           Name
           <input
@@ -227,27 +241,35 @@ export function ConfigPanel({
             }}
           />
         </label>
-        {agreementError && <div className="mlp-error-text">JSON error: {agreementError}</div>}
+        {agreementError && (
+          <ErrorState title="That is not valid JSON" inline data-testid="config-agreement-error">
+            JSON error: {agreementError}
+          </ErrorState>
+        )}
 
         <div className="mlp-actions" style={{ marginTop: 12 }}>
-          <button
-            className="mlp-btn mlp-btn-primary"
+          <Button
+            variant="primary"
             disabled={busy}
             data-testid="config-save"
             onClick={() => void save()}
           >
             {busy ? "Saving…" : "Save configuration"}
-          </button>
+          </Button>
         </div>
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Template</h3>
-        <p className="mlp-muted">
-          Bound to <strong>{template?.name}</strong> v{project.template_version}. Editing the
-          schema here clones the template and rebinds this project to the copy, so a
-          template shared with other projects is never reshaped underneath them (§2.5).
-        </p>
+      <Card
+        headingLevel={3}
+        title="Template"
+        description={
+          <>
+            Bound to <strong>{template?.name}</strong> v{project.template_version}. Editing the
+            schema here clones the template and rebinds this project to the copy, so a template
+            shared with other projects is never reshaped underneath them (§2.5).
+          </>
+        }
+      >
         <label className="mlp-check">
           <input
             type="checkbox"
@@ -265,7 +287,7 @@ export function ConfigPanel({
             </p>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   );
 }

@@ -262,6 +262,48 @@ body {
   padding: var(--gap);
 }
 
+/* ---- card header slot (phase 5) -----------------------------------------
+ *
+ * Every admin panel rebuilt this by hand: a heading, sometimes a line of
+ * explanatory text under it, sometimes a button pushed to the right with an
+ * inline `marginLeft: auto`. Fifteen hand-built variations of one layout is
+ * fifteen chances for the spacing and the heading level to drift, and both had.
+ *
+ * The title is rendered by `Card` as an `<h2>` by default, which is also the
+ * fix for the heading hierarchy the plan flags: panels used to open at `<h3>`
+ * with no `<h2>` above them, so the document outline skipped a level on every
+ * admin screen.
+ */
+.mlp-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.mlp-card-heading {
+  min-width: 0;
+}
+.mlp-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.mlp-card-desc {
+  margin: var(--space-1) 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+/* `flex-shrink: 0` so a long description never squeezes the action into a
+   two-line button; the description wraps instead, which is the cheaper loss. */
+.mlp-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
 .mlp-muted {
   color: var(--text-muted);
 }
@@ -435,29 +477,59 @@ pre.mlp-code {
   display: flex;
   gap: 8px;
 }
+/* ---- buttons (phase 5) ---------------------------------------------------
+ *
+ * Three variants and three sizes, replacing the single `.mlp-btn` that each
+ * call site used to bend by hand. The variant is a statement about rank, not
+ * about colour: one primary per view, secondary for everything ordinary, and
+ * ghost for controls that live inside a row of data and must not out-shout the
+ * data. Making that choice once, here, is the point — an app where every
+ * button looks identical is an app with no visual hierarchy at all.
+ *
+ * Bare `.mlp-btn` keeps rendering the secondary look. Deliberate: the call
+ * sites that say `className="mlp-btn"` all mean "an ordinary button", so the
+ * class they already use should go on meaning exactly that.
+ *
+ * Size is set through local custom properties rather than by overriding
+ * `padding` and `font-size` per modifier. One consequence is worth the
+ * indirection: `--btn-h` is the single place the 24px WCAG 2.2 target-size
+ * floor is enforced, so no size can be added later that quietly violates it.
+ */
 .mlp-btn {
+  --btn-h: 34px;
+  --btn-pad-x: var(--space-3);
+  --btn-font: 14px;
+
   /* inline-flex so a button can carry its own key badge beside the label
      without the badge dropping onto the text baseline. */
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  padding: 8px 14px;
+  min-height: var(--btn-h);
+  padding: 0 var(--btn-pad-x);
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
+  font-family: inherit;
+  font-size: var(--btn-font);
+  line-height: 1.2;
   cursor: pointer;
+  /* Tint and border only, at the fast step. Never a transform or a shadow: a
+     button that moves under the cursor is a button that gets mis-clicked. */
+  transition:
+    background-color var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
-/* On a filled button the badge has to sit on the accent, not on the page. */
-.mlp-btn-primary .mlp-badge {
-  border-color: color-mix(in srgb, var(--accent-contrast) 45%, transparent);
-  background: transparent;
-  color: var(--accent-contrast);
+.mlp-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }
-.mlp-btn:disabled .mlp-badge {
-  border-color: var(--disabled-border);
-  color: var(--disabled-text);
-}
+
+/* ---- variants ---- */
+
 .mlp-btn-primary {
   /* `--accent-strong`, not `--accent`: this is the one place the accent has to
      carry white text, and the mid tone is a 3.6:1 background — fine behind an
@@ -467,11 +539,94 @@ pre.mlp-code {
   color: var(--accent-contrast);
   font-weight: 600;
 }
+/* Mixing toward `--text` rather than toward black, because `--text` flips with
+   the theme: the same rule darkens the blue on light and lightens it on dark,
+   which is the direction that keeps contrast against `--accent-contrast` in
+   both. Mixing toward black would have dimmed the dark-mode hover into its own
+   label. */
+.mlp-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-strong) 86%, var(--text));
+  border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--text));
+}
+
+/* The default look, named. `.mlp-btn` on its own is already this; the class
+   exists so a call site can say which of the three it meant. */
+.mlp-btn-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* No border and no fill at rest — it reads as a link with a hit area, which is
+   what a per-row action wants to be. It still gets a real border on hover and
+   the shared focus ring on focus, so it is never invisible when reached. */
+.mlp-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+.mlp-btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+/* Destructive action — delete a template (§2.5). Visually distinct from every
+   other button in the admin surface, because the one thing it must never be is
+   clicked by accident on the way to something else. */
+.mlp-btn-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.mlp-btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ---- sizes ---- */
+
+/* 24px minimum in both directions (WCAG 2.2 target size). "Small" is about the
+   type and the padding, not about the area you have to hit — which is why the
+   floor is on `--btn-h` and `min-width`, not on the label. */
+.mlp-btn-sm {
+  --btn-h: 26px;
+  --btn-pad-x: var(--space-2);
+  --btn-font: 12px;
+  min-width: 26px;
+}
+.mlp-btn-lg {
+  --btn-h: 42px;
+  --btn-pad-x: var(--space-5);
+  --btn-font: 15px;
+}
+
+/* ---- disabled ---- */
+
+/* One rule for all four variants: a disabled control is not a dimmer version of
+   itself, it is a different thing, and it should look the same whichever button
+   it used to be. Tokens rather than `opacity`, so the contrast is a number
+   somebody checked. */
 .mlp-btn:disabled {
   background: var(--disabled-bg);
   border-color: var(--disabled-border);
   color: var(--disabled-text);
   cursor: not-allowed;
+  font-weight: 400;
+}
+.mlp-btn-ghost:disabled {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* On a filled button the badge has to sit on the accent, not on the page. */
+.mlp-btn-primary .mlp-badge {
+  border-color: color-mix(in srgb, var(--accent-contrast) 45%, transparent);
+  background: transparent;
+  color: var(--accent-contrast);
+}
+.mlp-btn:disabled .mlp-badge {
+  border-color: var(--disabled-border);
+  color: var(--disabled-text);
 }
 
 /* ---- hotkey overlay (§2.4) ---- */
@@ -645,7 +800,18 @@ pre.mlp-code {
   background: var(--surface-2);
 }
 
-/* tables */
+/* ---- tables (reworked in phase 5) ---------------------------------------
+ *
+ * These are where an admin scans hundreds of rows, and three things were
+ * missing for that: the header scrolled away, nothing tracked the row under the
+ * cursor, and an empty result set collapsed the table to a bare header strip
+ * with no explanation.
+ *
+ * Sticky is to the page, not to a scroll box, because the content column is
+ * what scrolls. `--table-sticky-top` is how a different container says where
+ * "the top" is: the admin column offsets by the command bar, the unit drawer
+ * scrolls internally and so sits at 0.
+ */
 .mlp-table {
   width: 100%;
   border-collapse: collapse;
@@ -659,11 +825,118 @@ pre.mlp-code {
   vertical-align: top;
 }
 .mlp-table th {
+  position: sticky;
+  top: var(--table-sticky-top, 0px);
+  z-index: 1;
+  /* Sticky cells need their own background or the rows show through as they
+     pass underneath, and the bottom rule has to be an inset shadow rather than
+     a border — a border on a sticky cell scrolls away with the box model. */
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
+  border-bottom: 0;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-muted);
 }
+.mlp-table tbody tr {
+  transition: background-color var(--motion-fast) var(--ease);
+}
+.mlp-table tbody tr:hover {
+  background: var(--surface-2);
+}
+/* The empty state is a row spanning the full width rather than a block after
+   the table, so the column headers stay visible and the reader can see what
+   they searched *in*. */
+.mlp-table-empty td {
+  padding: 0;
+  border-bottom: 0;
+}
+/* Selector matched to the hover rule above, not shorter: `.mlp-table tbody
+   tr:hover` outweighs a bare `.mlp-table-empty:hover`, and the empty row is not
+   a row you can point at. */
+.mlp-table tbody tr.mlp-table-empty:hover {
+  background: transparent;
+}
+.mlp-admin-main {
+  --table-sticky-top: var(--sticky-top);
+}
+.mlp-drawer {
+  --table-sticky-top: 0px;
+}
+.mlp-table th.mlp-col-end,
+.mlp-table td.mlp-col-end {
+  text-align: right;
+}
+/* A table that follows other content inside the same card, rather than opening
+   it. Replaces the `style={{ marginTop: 12 }}` that three panels carried. */
+.mlp-table-spaced {
+  margin-top: var(--space-3);
+}
+/* ---- empty and error states (phase 5) ------------------------------------
+ *
+ * Both of these used to be a bare string in a card — "No judges enrolled on
+ * this project yet." or, worse, the raw text of whatever the fetch rejected
+ * with. A bare string is a dead end: it says what is not there and nothing
+ * about what to do next, and an error rendered as body text is not announced at
+ * all. These are one shape with two tones, so the two never drift apart.
+ *
+ * The tone is carried by an icon and a heading as well as by colour, since red
+ * text alone is not a distinction everyone can make.
+ */
+.mlp-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+}
+.mlp-state-icon {
+  color: var(--border-strong);
+}
+.mlp-state-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.mlp-state-body {
+  /* A measure, so a long explanation does not run the full width of a 1440px
+     table and become unreadable. */
+  margin: 0;
+  max-width: 52ch;
+  font-size: 13px;
+}
+.mlp-state-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.mlp-state-error .mlp-state-icon,
+.mlp-state-error .mlp-state-title {
+  color: var(--danger);
+}
+/* Inline variant: same content, laid out as a row for the places that sit
+   inside a form rather than standing in for a whole panel. */
+.mlp-state-inline {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  padding: var(--space-3);
+  gap: var(--space-3);
+}
+.mlp-state-inline .mlp-state-icon {
+  margin-top: 2px;
+}
+.mlp-state-error.mlp-state-inline {
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+}
+
 .mlp-payload-cell {
   max-width: 360px;
   overflow: hidden;
@@ -809,12 +1082,13 @@ pre.mlp-code {
   margin: 6px 0 0;
   color: var(--danger);
 }
-.mlp-error,
+/* `.mlp-error` — a danger border on a card — is gone as of phase 5. Everything
+   that used it is an `ErrorState` now, which announces itself and says what
+   failed rather than tinting a box red.
+   `.mlp-error-text` stays, and means something narrower: inline field-level
+   validation, which belongs beside the field and is not a failed operation. */
 .mlp-error-text {
   color: var(--danger);
-}
-.mlp-error {
-  border-color: var(--danger);
 }
 .mlp-dist-title {
   font-weight: 600;
@@ -829,12 +1103,11 @@ pre.mlp-code {
   gap: 12px;
   margin: 8px 0 14px;
 }
+/* Row hover moved to `.mlp-table tbody tr:hover` in phase 5, where it belongs —
+   every table has it now. What is left here is the part that is specific to
+   this table: these rows are clickable and the others are not. */
 .mlp-landing-row {
   cursor: pointer;
-  transition: background 0.12s ease;
-}
-.mlp-landing-row:hover {
-  background: var(--surface-2);
 }
 .mlp-landing-name {
   font-weight: 600;
@@ -1067,16 +1340,10 @@ input.mlp-number {
   display: flex;
   gap: 4px;
 }
-/* 24px minimum in both directions (WCAG 2.2 target size). "Tiny" is about the
-   type and the padding, not about the area you have to hit. */
-.mlp-btn-tiny {
-  display: inline-grid;
-  place-items: center;
-  min-width: 24px;
-  min-height: 24px;
-  padding: 2px 6px;
-  font-size: 12px;
-}
+/* `.mlp-btn-tiny` lived here until phase 5. It is `.mlp-btn-sm` in the button
+   block now — the size scale is the same idea generalised, and keeping a
+   one-off beside it would have meant two answers to "how do I make a button
+   smaller". */
 
 /* ---- visual template builder (§11) ----
  *
@@ -1348,20 +1615,8 @@ input.mlp-number {
   color: var(--ok, #2e7d32);
 }
 
-/* Destructive action — delete a template (§2.5). Visually distinct from every
-   other button in the admin surface, because the one thing it must never be is
-   clicked by accident on the way to something else. */
-.mlp-btn-danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-.mlp-btn-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-}
-.mlp-btn-danger:disabled {
-  border-color: var(--border);
-  color: var(--text-muted);
-}
+/* `.mlp-btn-danger` moved into the button block in phase 5, beside the other
+   three variants, so the whole set can be read at once. */
 
 /* ---- M8: annotator home, exit control, review queue (§7.2, §11) ---- */
 

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Card } from "../../../components/ui";
 import { ApiError, type MiniLpClient } from "../../../api/client";
 import type { Template, TemplateSchema } from "../../../api/types";
 import { TemplateBuilder } from "./TemplateBuilder";
@@ -85,7 +86,14 @@ export function TemplateEditor({
     }
   }, [client, existing, schema, onSaved]);
 
-  if (!loaded) return <div className="mlp-card">Loading template…</div>;
+  if (!loaded)
+    return (
+      <Card>
+        <p className="mlp-muted" role="status">
+          Loading template…
+        </p>
+      </Card>
+    );
 
   return (
     <div className="mlp-stack-lg">
