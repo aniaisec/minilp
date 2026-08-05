@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { ActiveLearningBatch, IterationCurve } from "../../api/types";
 import { StatCard } from "./widgets";
@@ -91,26 +92,29 @@ export function ActiveLearningPanel({
   return (
     <div className="mlp-stack-lg" data-testid="al-panel">
       {error && (
-        <div className="mlp-error-text" data-testid="al-error">
+        <ErrorState title="The last active-learning call failed" inline data-testid="al-error">
           {error}
-        </div>
+        </ErrorState>
       )}
 
       {/* --- eval curve --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Iteration eval curve (§8)</h3>
-        <p className="mlp-muted">
-          A checkpoint re-enrolled under the same name is a new <em>iteration</em> — its{" "}
-          <code>prompt_version</code> reused as the loop's own counter, no second one kept. Gold
-          accuracy and agreement against the decided answer (<code>final_labels</code>) are the eval
-          curve.
-        </p>
-
+      <Card
+        headingLevel={3}
+        title="Iteration eval curve (§8)"
+        description={
+          <>
+            A checkpoint re-enrolled under the same name is a new <em>iteration</em> — its{" "}
+            <code>prompt_version</code> reused as the loop's own counter, no second one kept. Gold
+            accuracy and agreement against the decided answer (<code>final_labels</code>) are the
+            eval curve.
+          </>
+        }
+      >
         {names.length === 0 ? (
-          <p className="mlp-muted" data-testid="al-no-checkpoints">
-            No checkpoint has been registered on this project yet — register one below to start a
-            loop.
-          </p>
+          <EmptyState title="No checkpoint registered yet" data-testid="al-no-checkpoints">
+            Register a checkpoint below to start a loop. Each re-registration under the same name
+            becomes the next iteration on this curve.
+          </EmptyState>
         ) : (
           <div className="mlp-actions" style={{ marginBottom: 10 }}>
             <label className="mlp-inline-label">
@@ -145,69 +149,71 @@ export function ActiveLearningPanel({
               />
               <StatCard label="Human minutes on this project" value={curve.human_minutes} />
             </div>
-            <table className="mlp-table" style={{ marginTop: 12 }} data-testid="al-iterations-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Model</th>
-                  <th>Gold accuracy</th>
-                  <th>Agreement vs. decided</th>
-                  <th>Labels</th>
-                  <th>Spend</th>
+            <Table
+              className="mlp-table-spaced"
+              caption="Eval curve — one row per checkpoint iteration"
+              data-testid="al-iterations-table"
+              columns={[
+                "#",
+                "Model",
+                "Gold accuracy",
+                "Agreement vs. decided",
+                "Labels",
+                "Spend",
+              ]}
+            >
+              {curve.iterations.map((p) => (
+                <tr key={p.judge_config_id} data-testid={`al-iter-${p.iteration}`}>
+                  <td className="mlp-mono">v{p.iteration}</td>
+                  <td className="mlp-mono">
+                    {p.provider} / {p.model_id}
+                  </td>
+                  <td>
+                    {pct(p.gold_accuracy.rate)}
+                    {p.gold_accuracy.total > 0 && (
+                      <span className="mlp-muted">
+                        {" "}
+                        ({p.gold_accuracy.passes}/{p.gold_accuracy.total})
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {pct(p.agreement_vs_final.rate)}
+                    {p.agreement_vs_final.comparisons > 0 && (
+                      <span className="mlp-muted">
+                        {" "}
+                        ({p.agreement_vs_final.agreements}/{p.agreement_vs_final.comparisons})
+                      </span>
+                    )}
+                  </td>
+                  <td>{p.label_count}</td>
+                  <td>{money(p.spend?.cost_usd)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {curve.iterations.map((p) => (
-                  <tr key={p.judge_config_id} data-testid={`al-iter-${p.iteration}`}>
-                    <td className="mlp-mono">v{p.iteration}</td>
-                    <td className="mlp-mono">
-                      {p.provider} / {p.model_id}
-                    </td>
-                    <td>
-                      {pct(p.gold_accuracy.rate)}
-                      {p.gold_accuracy.total > 0 && (
-                        <span className="mlp-muted">
-                          {" "}
-                          ({p.gold_accuracy.passes}/{p.gold_accuracy.total})
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {pct(p.agreement_vs_final.rate)}
-                      {p.agreement_vs_final.comparisons > 0 && (
-                        <span className="mlp-muted">
-                          {" "}
-                          ({p.agreement_vs_final.agreements}/{p.agreement_vs_final.comparisons})
-                        </span>
-                      )}
-                    </td>
-                    <td>{p.label_count}</td>
-                    <td>{money(p.spend?.cost_usd)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </Table>
           </>
         )}
-      </section>
+      </Card>
 
       {/* --- register the next checkpoint --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Register a checkpoint (§8 step 4)</h3>
-        <p className="mlp-muted">
-          Fine-tune externally, then register the checkpoint here — this writes the next judge-config
-          version under the name and enrolls it in one call, exactly like{" "}
-          <code>POST /judges/{"{id}"}:version</code> followed by <code>:attach</code>. A local or
-          fine-tuned checkpoint is the <code>openai_compatible</code> provider with its{" "}
-          <code>base_url</code> pointed at your server — no new provider code.
-        </p>
-        <button
-          className="mlp-btn"
-          data-testid="al-toggle-form"
-          onClick={() => setShowForm((v) => !v)}
-        >
-          {showForm ? "Cancel" : "Register checkpoint…"}
-        </button>
+      <Card
+        headingLevel={3}
+        title="Register a checkpoint (§8 step 4)"
+        description={
+          <>
+            Fine-tune externally, then register the checkpoint here — this writes the next
+            judge-config version under the name and enrolls it in one call, exactly like{" "}
+            <code>POST /judges/{"{id}"}:version</code> followed by <code>:attach</code>. A local
+            or fine-tuned checkpoint is the <code>openai_compatible</code> provider with its{" "}
+            <code>base_url</code> pointed at your server — no new provider code.
+          </>
+        }
+        actions={
+          <Button data-testid="al-toggle-form" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? "Cancel" : "Register checkpoint…"}
+          </Button>
+        }
+      >
         {showForm && (
           <CheckpointForm
             defaultName={selectedName}
@@ -229,16 +235,14 @@ export function ActiveLearningPanel({
             }}
           />
         )}
-      </section>
+      </Card>
 
       {/* --- next batch to label --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Next batch (§8 step 1)</h3>
-        <p className="mlp-muted">
-          Ranked by informativeness: ensemble disagreement, vote entropy, and — when a checkpoint
-          line above has a judge — that model's own low confidence. Already-finalized units are not
-          scored; there is nothing left to be informative about.
-        </p>
+      <Card
+        headingLevel={3}
+        title="Next batch (§8 step 1)"
+        description="Ranked by informativeness: ensemble disagreement, vote entropy, and — when a checkpoint line above has a judge — that model's own low confidence. Already-finalized units are not scored; there is nothing left to be informative about."
+      >
         <div className="mlp-actions" style={{ alignItems: "center" }}>
           <label className="mlp-inline-label">
             Batch size
@@ -252,14 +256,14 @@ export function ActiveLearningPanel({
               style={{ width: 80 }}
             />
           </label>
-          <button
-            className="mlp-btn mlp-btn-primary"
+          <Button
+            variant="primary"
             data-testid="al-load-batch"
             disabled={busy !== null}
             onClick={() => void loadBatch()}
           >
             {busy === "batch" ? "Ranking…" : "Rank next batch"}
-          </button>
+          </Button>
         </div>
 
         {batch && (
@@ -269,39 +273,33 @@ export function ActiveLearningPanel({
               {batch.dropped_by_dedupe > 0 && `, ${batch.dropped_by_dedupe} dropped as near-duplicates`}
               .
             </p>
-            {batch.units.length === 0 ? (
-              <p className="mlp-muted" data-testid="al-batch-empty">
-                Nothing left to rank — every unit is finalized.
-              </p>
-            ) : (
-              <table className="mlp-table" data-testid="al-batch-table">
-                <thead>
-                  <tr>
-                    <th>Unit</th>
-                    <th>Disagreement</th>
-                    <th>Entropy</th>
-                    <th>Confidence</th>
-                    <th>Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batch.units.map((u) => (
-                    <tr key={u.unit_id}>
-                      <td className="mlp-mono">#{u.unit_id}</td>
-                      <td>{u.disagreement === null ? "—" : u.disagreement.toFixed(2)}</td>
-                      <td>{u.entropy === null ? "—" : u.entropy.toFixed(2)}</td>
-                      <td>{u.confidence === null ? "—" : u.confidence.toFixed(2)}</td>
-                      <td>
-                        <strong>{u.score.toFixed(2)}</strong>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <Table
+              caption="Units ranked by informativeness, most informative first"
+              data-testid="al-batch-table"
+              columns={["Unit", "Disagreement", "Entropy", "Confidence", "Score"]}
+              isEmpty={batch.units.length === 0}
+              empty={
+                <EmptyState title="Nothing left to rank" data-testid="al-batch-empty">
+                  Every unit in this project is finalized, so there is nothing left for a label to
+                  be informative about.
+                </EmptyState>
+              }
+            >
+              {batch.units.map((u) => (
+                <tr key={u.unit_id}>
+                  <td className="mlp-mono">#{u.unit_id}</td>
+                  <td>{u.disagreement === null ? "—" : u.disagreement.toFixed(2)}</td>
+                  <td>{u.entropy === null ? "—" : u.entropy.toFixed(2)}</td>
+                  <td>{u.confidence === null ? "—" : u.confidence.toFixed(2)}</td>
+                  <td>
+                    <strong>{u.score.toFixed(2)}</strong>
+                  </td>
+                </tr>
+              ))}
+            </Table>
           </>
         )}
-      </section>
+      </Card>
     </div>
   );
 }

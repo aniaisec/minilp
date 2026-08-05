@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type {
   JudgeConfig,
@@ -113,19 +114,21 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
 
   return (
     <div className="mlp-stack-lg" data-testid="marketplace-panel">
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Marketplace (§12)</h3>
-        <p className="mlp-muted">
-          Export a template, judge config, or project as a shareable JSON bundle; import re-runs
-          the exact validation a hand-authored one goes through, so an imported bundle validates
-          and previews identically. A judge-config bundle never carries a credential — only the{" "}
-          <em>name</em> of an environment variable the server reads at call time.
-        </p>
-
+      <Card
+        title="Marketplace (§12)"
+        description={
+          <>
+            Export a template, judge config, or project as a shareable JSON bundle; import
+            re-runs the exact validation a hand-authored one goes through, so an imported bundle
+            validates and previews identically. A judge-config bundle never carries a credential
+            — only the <em>name</em> of an environment variable the server reads at call time.
+          </>
+        }
+      >
         {error && (
-          <div className="mlp-error-text" data-testid="marketplace-error">
+          <ErrorState title="The import failed" inline data-testid="marketplace-error">
             {error}
-          </div>
+          </ErrorState>
         )}
 
         {result && (
@@ -133,78 +136,74 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
             Imported: {resultSummary(result)}.
           </div>
         )}
-      </section>
+      </Card>
 
       {/* --- shipped bundles --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Shared bundles</h3>
-        <p className="mlp-muted">
-          Shipped with this instance — "a local directory of shared bundles ... no hosted
-          registry in v1" (PLAN.md §12).
-        </p>
-        {localBundles.length === 0 ? (
-          <p className="mlp-muted" data-testid="local-bundles-empty">
-            No local bundles found.
-          </p>
-        ) : (
-          <table className="mlp-table" data-testid="local-bundles-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Kind</th>
-                <th>Description</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {localBundles.map((b) => (
-                <tr key={b.filename} data-testid={`local-bundle-${b.filename}`}>
-                  <td>{b.name ?? b.filename}</td>
-                  <td>
-                    <Pill tone="muted">{b.kind ?? "unknown"}</Pill>
-                  </td>
-                  <td className="mlp-muted" style={{ maxWidth: 420 }}>
-                    {b.description}
-                  </td>
-                  <td>
-                    <div className="mlp-actions">
-                      <button
-                        className="mlp-btn"
-                        data-testid={`local-bundle-view-${b.filename}`}
-                        disabled={busy !== null}
-                        onClick={async () => {
-                          const full = await client.getLocalBundle(b.filename);
-                          setPasted(JSON.stringify(full, null, 2));
-                          setParseError(null);
-                        }}
-                      >
-                        View
-                      </button>
-                      <button
-                        className="mlp-btn mlp-btn-primary"
-                        data-testid={`local-bundle-import-${b.filename}`}
-                        disabled={busy !== null}
-                        onClick={() =>
-                          void act(`local:${b.filename}`, () =>
-                            client.importLocalBundle(b.filename, createProject),
-                          )
-                        }
-                      >
-                        {busy === `local:${b.filename}` ? "Importing…" : "Import"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <Card
+        title="Shared bundles"
+        description={`Shipped with this instance — "a local directory of shared bundles ... no hosted registry in v1" (PLAN.md §12).`}
+      >
+        <Table
+          caption="Bundles shipped with this instance"
+          data-testid="local-bundles-table"
+          columns={["Name", "Kind", "Description", { srLabel: "Actions" }]}
+          isEmpty={localBundles.length === 0}
+          empty={
+            <EmptyState title="No local bundles found" data-testid="local-bundles-empty">
+              This instance ships no shared bundles. You can still import one by pasting or
+              uploading its JSON below.
+            </EmptyState>
+          }
+        >
+          {localBundles.map((b) => (
+            <tr key={b.filename} data-testid={`local-bundle-${b.filename}`}>
+              <td>{b.name ?? b.filename}</td>
+              <td>
+                <Pill tone="muted">{b.kind ?? "unknown"}</Pill>
+              </td>
+              <td className="mlp-muted" style={{ maxWidth: 420 }}>
+                {b.description}
+              </td>
+              <td>
+                <div className="mlp-actions">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-testid={`local-bundle-view-${b.filename}`}
+                    disabled={busy !== null}
+                    onClick={async () => {
+                      const full = await client.getLocalBundle(b.filename);
+                      setPasted(JSON.stringify(full, null, 2));
+                      setParseError(null);
+                    }}
+                  >
+                    View
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    data-testid={`local-bundle-import-${b.filename}`}
+                    disabled={busy !== null}
+                    onClick={() =>
+                      void act(`local:${b.filename}`, () =>
+                        client.importLocalBundle(b.filename, createProject),
+                      )
+                    }
+                  >
+                    {busy === `local:${b.filename}` ? "Importing…" : "Import"}
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </Table>
+      </Card>
 
       {/* --- import a bundle from anywhere --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Import a bundle</h3>
-        <p className="mlp-muted">Paste a bundle's JSON, or upload the file you downloaded.</p>
+      <Card
+        title="Import a bundle"
+        description="Paste a bundle's JSON, or upload the file you downloaded."
+      >
         <textarea
           className="mlp-textarea mlp-mono"
           rows={8}
@@ -217,9 +216,13 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
           }}
         />
         {parseError && (
-          <div className="mlp-error-text" data-testid="marketplace-parse-error">
+          <ErrorState
+            title="That is not valid JSON"
+            inline
+            data-testid="marketplace-parse-error"
+          >
             JSON error: {parseError}
-          </div>
+          </ErrorState>
         )}
         <div className="mlp-actions" style={{ marginTop: 8, flexWrap: "wrap" }}>
           <input
@@ -234,13 +237,12 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
               e.target.value = "";
             }}
           />
-          <button
-            className="mlp-btn"
+          <Button
             data-testid="marketplace-file-trigger"
             onClick={() => fileInput.current?.click()}
           >
             Upload file…
-          </button>
+          </Button>
           <label className="mlp-inline-label">
             <input
               type="checkbox"
@@ -250,54 +252,64 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
             />
             For a project bundle, also create the project
           </label>
-          <button
-            className="mlp-btn mlp-btn-primary"
+          <Button
+            variant="primary"
             data-testid="marketplace-import"
             disabled={busy !== null || !pasted.trim()}
             onClick={importPasted}
           >
             {busy === "paste" ? "Importing…" : "Import"}
-          </button>
+          </Button>
         </div>
-      </section>
+      </Card>
 
       {/* --- export existing templates / judges --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Export</h3>
-        <p className="mlp-muted">
-          A project's bundle (template + enrolled judges + config) downloads from that project's{" "}
-          <strong>Export</strong> tab.
-        </p>
-        <h4>Templates</h4>
-        <ul className="mlp-list" data-testid="export-templates-list">
-          {templates.map((t) => (
-            <li key={t.id} data-testid={`export-template-${t.id}`}>
-              <span>
-                {t.name} <span className="mlp-muted">v{t.version}</span>
-              </span>
-              <button
-                className="mlp-btn"
-                style={{ marginLeft: 10 }}
-                data-testid={`export-template-download-${t.id}`}
-                onClick={async () => {
-                  try {
-                    const bundle = await client.exportTemplateBundle(t.id);
-                    download(`template-${t.name}-v${t.version}.json`, bundle);
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : String(e));
-                  }
-                }}
-              >
-                Download bundle
-              </button>
-            </li>
-          ))}
-        </ul>
-        <h4>Judge configs</h4>
+      <Card
+        title="Export"
+        description={
+          <>
+            A project's bundle (template + enrolled judges + config) downloads from that
+            project's <strong>Export</strong> tab.
+          </>
+        }
+      >
+        <h3>Templates</h3>
+        {templates.length === 0 ? (
+          <EmptyState title="No templates yet" inline data-testid="export-templates-empty">
+            Build or import a template and it becomes exportable here.
+          </EmptyState>
+        ) : (
+          <ul className="mlp-list" data-testid="export-templates-list">
+            {templates.map((t) => (
+              <li key={t.id} data-testid={`export-template-${t.id}`}>
+                <span>
+                  {t.name} <span className="mlp-muted">v{t.version}</span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  style={{ marginLeft: 10 }}
+                  data-testid={`export-template-download-${t.id}`}
+                  onClick={async () => {
+                    try {
+                      const bundle = await client.exportTemplateBundle(t.id);
+                      download(`template-${t.name}-v${t.version}.json`, bundle);
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    }
+                  }}
+                >
+                  Download bundle
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <h3>Judge configs</h3>
         {judges.length === 0 ? (
-          <p className="mlp-muted" data-testid="export-judges-empty">
-            No judge configs yet.
-          </p>
+          <EmptyState title="No judge configs yet" inline data-testid="export-judges-empty">
+            Create one from a project's Judges section and it becomes exportable here.
+          </EmptyState>
         ) : (
           <ul className="mlp-list" data-testid="export-judges-list">
             {judges.map((j) => (
@@ -305,8 +317,9 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
                 <span>
                   {j.name} <span className="mlp-muted">v{j.prompt_version}</span>
                 </span>
-                <button
-                  className="mlp-btn"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   style={{ marginLeft: 10 }}
                   data-testid={`export-judge-download-${j.id}`}
                   onClick={async () => {
@@ -319,12 +332,12 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
                   }}
                 >
                   Download bundle
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Card>
     </div>
   );
 }

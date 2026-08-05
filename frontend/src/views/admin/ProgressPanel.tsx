@@ -5,6 +5,7 @@
 // because the project header needs the same funnel on every section — fetching
 // it here as well would have meant two identical requests on this route.
 
+import { Card, EmptyState } from "../../components/ui";
 import type { Progress } from "../../api/types";
 import { eta, pct } from "./format";
 import { Bar, PairedBar, Pill, StatCard } from "./widgets";
@@ -33,8 +34,7 @@ export function ProgressPanel({ data }: { data: Progress }) {
         />
       </div>
 
-      <section className="mlp-card">
-        <h3>Status funnel</h3>
+      <Card headingLevel={3} title="Status funnel">
         {(["pending", "in_progress", "labeled", "finalized"] as const).map((k) => (
           <Bar
             key={k}
@@ -46,11 +46,15 @@ export function ProgressPanel({ data }: { data: Progress }) {
             }
           />
         ))}
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3>Per-batch fill</h3>
-        {data.batches.length === 0 && <p className="mlp-muted">No batches yet.</p>}
+      <Card headingLevel={3} title="Per-batch fill">
+        {data.batches.length === 0 && (
+          <EmptyState title="No batches yet" data-testid="progress-batches-empty">
+            Units are added to a project in batches. Add tasks from the Add tasks section and the
+            fill rate of each batch appears here.
+          </EmptyState>
+        )}
         {data.batches.map((b) => (
           <Bar
             key={String(b.batch_id)}
@@ -62,22 +66,24 @@ export function ProgressPanel({ data }: { data: Progress }) {
             }
           />
         ))}
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3>
-          Per-variant fill{" "}
-          {data.variants.dimension ? (
-            <Pill tone={data.variants.balanced ? "ok" : "warn"}>
-              {data.variants.balanced ? "balanced" : "IMBALANCED"}
-            </Pill>
-          ) : (
-            <Pill tone="muted">no variants</Pill>
-          )}
-        </h3>
-        <p className="mlp-muted">
-          Equal totals per value are the K/n counterbalancing invariant (§2.7).
-        </p>
+      <Card
+        headingLevel={3}
+        title={
+          <>
+            Per-variant fill{" "}
+            {data.variants.dimension ? (
+              <Pill tone={data.variants.balanced ? "ok" : "warn"}>
+                {data.variants.balanced ? "balanced" : "IMBALANCED"}
+              </Pill>
+            ) : (
+              <Pill tone="muted">no variants</Pill>
+            )}
+          </>
+        }
+        description="Equal totals per value are the K/n counterbalancing invariant (§2.7)."
+      >
         <PairedBar
           denom={variantDenom}
           rows={data.variants.values.map((v) => ({
@@ -86,15 +92,18 @@ export function ProgressPanel({ data }: { data: Progress }) {
             total: v.total,
           }))}
         />
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3>Per-key consensus</h3>
-        <p className="mlp-muted">
-          Share of the {data.consensus.complete_units} complete unit(s) that reached consensus.
-        </p>
+      <Card
+        headingLevel={3}
+        title="Per-key consensus"
+        description={`Share of the ${data.consensus.complete_units} complete unit(s) that reached consensus.`}
+      >
         {Object.keys(data.consensus.keys).length === 0 && (
-          <p className="mlp-muted">No complete units yet.</p>
+          <EmptyState title="No complete units yet" data-testid="progress-consensus-empty">
+            A unit is complete once it has all K labels. Consensus rates appear per answer key as
+            units complete.
+          </EmptyState>
         )}
         {Object.entries(data.consensus.keys).map(([key, k]) => (
           <Bar
@@ -108,7 +117,7 @@ export function ProgressPanel({ data }: { data: Progress }) {
             }
           />
         ))}
-      </section>
+      </Card>
     </div>
   );
 }

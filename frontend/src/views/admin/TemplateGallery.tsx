@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState } from "../../components/ui";
 import type { MiniLpClient, TaskClient } from "../../api/client";
 import type {
   LabelOut,
@@ -92,8 +93,8 @@ function DeleteTemplate({
   return (
     <span className="mlp-actions" style={{ gap: 8 }} data-testid="template-delete">
       {!confirming ? (
-        <button
-          className="mlp-btn mlp-btn-danger"
+        <Button
+          variant="danger"
           data-testid="template-delete-start"
           disabled={blocked || usage === null}
           title={
@@ -104,28 +105,24 @@ function DeleteTemplate({
           onClick={() => setConfirming(true)}
         >
           Delete
-        </button>
+        </Button>
       ) : (
         <>
           <span className="mlp-muted" data-testid="template-delete-prompt">
             Delete {lineage ? `all ${usage?.versions} versions of` : `v${template.version} of`}{" "}
             <strong>{template.name}</strong>?
           </span>
-          <button
-            className="mlp-btn mlp-btn-danger"
+          <Button
+            variant="danger"
             data-testid="template-delete-confirm"
             disabled={busy || blocked}
             onClick={() => void run()}
           >
             {busy ? "Deleting…" : "Yes, delete"}
-          </button>
-          <button
-            className="mlp-btn"
-            data-testid="template-delete-cancel"
-            onClick={() => setConfirming(false)}
-          >
+          </Button>
+          <Button data-testid="template-delete-cancel" onClick={() => setConfirming(false)}>
             Cancel
-          </button>
+          </Button>
         </>
       )}
       {(usage?.versions ?? 1) > 1 && (
@@ -253,16 +250,25 @@ export function TemplateGallery({
       <aside className="mlp-gallery-list mlp-card">
         <h3>Templates</h3>
         {onNew && (
-          <button
-            className="mlp-btn mlp-btn-primary"
+          <Button
+            variant="primary"
             style={{ width: "100%", marginBottom: 10 }}
             data-testid="gallery-new"
             onClick={onNew}
           >
             + Build from scratch
-          </button>
+          </Button>
         )}
-        {error && <div className="mlp-error">{error}</div>}
+        {error && (
+          <ErrorState title="Template action failed" inline data-testid="gallery-error">
+            {error}
+          </ErrorState>
+        )}
+        {templates.length === 0 && !error && (
+          <EmptyState title="No templates yet" data-testid="gallery-empty">
+            Build one from scratch, or import a template bundle from the Marketplace.
+          </EmptyState>
+        )}
         {templates.map((t) => (
           <button
             key={t.id}
@@ -278,22 +284,20 @@ export function TemplateGallery({
       <div className="mlp-gallery-main mlp-stack-lg">
         {selected && (
           <>
-            <div className="mlp-card">
-              <h3 style={{ marginTop: 0 }}>
-                {selected.name} <span className="mlp-muted">v{selected.version}</span>
-              </h3>
-              {selected.description && <p className="mlp-muted">{selected.description}</p>}
+            <Card
+              title={
+                <>
+                  {selected.name} <span className="mlp-muted">v{selected.version}</span>
+                </>
+              }
+              description={selected.description || undefined}
+            >
               {onEdit && (
                 <div className="mlp-actions" style={{ marginBottom: 10 }}>
-                  <button
-                    className="mlp-btn"
-                    data-testid="gallery-edit"
-                    onClick={() => onEdit(selected.id)}
-                  >
+                  <Button data-testid="gallery-edit" onClick={() => onEdit(selected.id)}>
                     {selected.kind === "builtin" ? "Open in builder" : "Edit in builder"}
-                  </button>
-                  <button
-                    className="mlp-btn"
+                  </Button>
+                  <Button
                     data-testid="gallery-clone"
                     onClick={async () => {
                       try {
@@ -307,7 +311,7 @@ export function TemplateGallery({
                     }}
                   >
                     Use as starting point
-                  </button>
+                  </Button>
                   {selected.kind !== "builtin" && (
                     <DeleteTemplate
                       client={client}
@@ -345,15 +349,19 @@ export function TemplateGallery({
                   value={sampleText}
                   onChange={(e) => onSampleChange(e.target.value)}
                 />
-                {parseError && <div className="mlp-error-text">JSON error: {parseError}</div>}
+                {parseError && (
+                  <ErrorState title="That is not valid JSON" inline data-testid="gallery-parse-error">
+                    JSON error: {parseError}
+                  </ErrorState>
+                )}
                 <div className="mlp-actions" style={{ marginTop: 8 }}>
-                  <button className="mlp-btn mlp-btn-primary" disabled={!!parseError} onClick={save}>
+                  <Button variant="primary" disabled={!!parseError} onClick={save}>
                     Save sample
-                  </button>
+                  </Button>
                   {saveMsg && <span className="mlp-muted">{saveMsg}</span>}
                 </div>
               </details>
-            </div>
+            </Card>
 
             <div className="mlp-card mlp-preview-frame">
               <div className="mlp-muted" style={{ marginBottom: 8 }}>

@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../components/ui";
 import type { MiniLpClient } from "../api/client";
 import type { InputField, ReviewItem, TemplateSchema } from "../api/types";
 import { eventToken, isTypingTarget } from "../hotkeys/event";
@@ -213,65 +214,61 @@ export function Review({ client, projectId, exit }: ReviewProps) {
           </span>
         </div>
         <div className="mlp-actions">
-          <button
-            type="button"
-            className="mlp-btn"
+          <Button
             onClick={() => setIndex((i) => Math.max(0, i - 1))}
             disabled={index === 0}
             data-testid="review-prev"
           >
             Prev (p)
-          </button>
-          <button
-            type="button"
-            className="mlp-btn"
+          </Button>
+          <Button
             onClick={() => setIndex((i) => (queue && i < queue.length - 1 ? i + 1 : i))}
             disabled={!queue || index >= queue.length - 1}
             data-testid="review-next"
           >
             Next (n)
-          </button>
-          <button
-            type="button"
-            className="mlp-btn"
+          </Button>
+          <Button
             onClick={() => setOverriding((v) => !v)}
             disabled={!current}
             data-testid="review-override-toggle"
           >
             Override (o)
-          </button>
-          <button
-            type="button"
-            className="mlp-btn mlp-btn-primary"
+          </Button>
+          <Button
+            variant="primary"
             onClick={() => void submitDecision("approve")}
             disabled={!current || busy || !item?.proposal}
             data-testid="review-approve"
           >
             Approve (a)
-          </button>
+          </Button>
         </div>
       </div>
 
       {error && (
-        <div
-          className="mlp-card"
-          style={{ borderColor: "var(--danger)" }}
-          data-testid="review-error"
-        >
-          {error}
-        </div>
+        <Card>
+          <ErrorState title="Could not load the review queue" data-testid="review-error">
+            {error}
+          </ErrorState>
+        </Card>
       )}
 
-      {!queue && !error && <div className="mlp-card">Loading queue…</div>}
+      {!queue && !error && (
+        <Card>
+          <p className="mlp-muted" role="status">
+            Loading queue…
+          </p>
+        </Card>
+      )}
 
       {queue && queue.length === 0 && (
-        <div className="mlp-card mlp-muted" data-testid="review-empty">
-          <strong>Nothing to review.</strong>
-          <p style={{ margin: "6px 0 0" }}>
-            Units arrive here when the routing pipeline cannot finalize them on its own —
-            low consensus, high disagreement, or a policy that always asks a human.
-          </p>
-        </div>
+        <Card>
+          <EmptyState title="Nothing to review" data-testid="review-empty">
+            Units arrive here when the routing pipeline cannot finalize them on its own — low
+            consensus, high disagreement, or a policy that always asks a human.
+          </EmptyState>
+        </Card>
       )}
 
       {item && (
@@ -308,32 +305,26 @@ export function Review({ client, projectId, exit }: ReviewProps) {
                 </div>
 
                 <div className="mlp-dist-title">Votes</div>
-                <table className="mlp-table" data-testid="review-votes">
-                  <thead>
-                    <tr>
-                      <th>Rater</th>
-                      <th>Answer</th>
-                      <th>Weight</th>
-                      <th>Conf.</th>
+                <Table
+                  caption={`Votes merged into the proposed answer for unit ${item.unit_id}`}
+                  data-testid="review-votes"
+                  columns={["Rater", "Answer", "Weight", "Conf."]}
+                >
+                  {votes.map((v) => (
+                    <tr key={v.label_id} data-testid={`review-vote-${v.annotator_id}`}>
+                      <td>
+                        <div>{v.judge ?? v.name ?? `#${v.annotator_id}`}</div>
+                        <div className="mlp-muted" style={{ fontSize: 12 }}>
+                          {v.kind}
+                          {v.variant ? ` · ${describe(v.variant)}` : ""}
+                        </div>
+                      </td>
+                      <td>{describe(v.value)}</td>
+                      <td>{v.weight.toFixed(2)}</td>
+                      <td>{v.confidence === null ? "—" : v.confidence.toFixed(2)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {votes.map((v) => (
-                      <tr key={v.label_id} data-testid={`review-vote-${v.annotator_id}`}>
-                        <td>
-                          <div>{v.judge ?? v.name ?? `#${v.annotator_id}`}</div>
-                          <div className="mlp-muted" style={{ fontSize: 12 }}>
-                            {v.kind}
-                            {v.variant ? ` · ${describe(v.variant)}` : ""}
-                          </div>
-                        </td>
-                        <td>{describe(v.value)}</td>
-                        <td>{v.weight.toFixed(2)}</td>
-                        <td>{v.confidence === null ? "—" : v.confidence.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  ))}
+                </Table>
 
                 {votes.some((v) => v.reasoning) && (
                   <div className="mlp-review-traces" data-testid="review-traces">
@@ -350,18 +341,18 @@ export function Review({ client, projectId, exit }: ReviewProps) {
                 )}
               </>
             ) : (
-              <div className="mlp-muted" data-testid="review-no-proposal">
-                No labels to merge — this unit can only be decided by overriding.
-              </div>
+              <EmptyState title="No labels to merge" data-testid="review-no-proposal">
+                This unit can only be decided by overriding — there is nothing to approve.
+              </EmptyState>
             )}
 
             {overriding && (
               <div className="mlp-review-override" data-testid="review-override">
                 <div className="mlp-dist-title">Your answer</div>
                 {inputs.length === 0 && (
-                  <div className="mlp-muted" style={{ fontSize: 13 }}>
+                  <p className="mlp-muted" role="status" style={{ fontSize: 13 }}>
                     Loading the template…
-                  </div>
+                  </p>
                 )}
                 {inputs.map((input) => {
                   const Widget = INPUT_WIDGETS[input.type];
@@ -387,22 +378,15 @@ export function Review({ client, projectId, exit }: ReviewProps) {
                   data-testid="review-comment"
                 />
                 <div className="mlp-rail-actions">
-                  <button
-                    type="button"
-                    className="mlp-btn"
-                    onClick={() => setOverriding(false)}
-                  >
-                    Cancel (esc)
-                  </button>
-                  <button
-                    type="button"
-                    className="mlp-btn mlp-btn-primary"
+                  <Button onClick={() => setOverriding(false)}>Cancel (esc)</Button>
+                  <Button
+                    variant="primary"
                     disabled={!overrideComplete || busy}
                     onClick={() => void submitDecision("override")}
                     data-testid="review-override-submit"
                   >
                     Save override ⏎
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

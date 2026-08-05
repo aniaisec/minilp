@@ -187,3 +187,24 @@ export function IconBook(p: IconProps) {
     </Icon>
   );
 }
+
+/* The empty and error states (phase 5) use these two. */
+
+export function IconInbox(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M3 13h4l1.6 3h6.8l1.6-3h4" />
+      <path d="M5.5 4.5h13l2.5 8.5v4.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V13l2.5-8.5Z" />
+    </Icon>
+  );
+}
+
+export function IconAlert(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4.5" />
+      <path d="M12 17h.01" />
+    </Icon>
+  );
+}

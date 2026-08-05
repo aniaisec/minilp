@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { Batch, UnitDetail, UnitSummary } from "../../api/types";
 import { Pill } from "./widgets";
@@ -93,43 +94,50 @@ export function UnitBrowser({ client, projectId }: { client: MiniLpClient; proje
         </label>
       </div>
 
-      {error && <div className="mlp-card mlp-error">{error}</div>}
+      {error && (
+        <Card>
+          <ErrorState title="Could not load units" data-testid="units-error">
+            {error}
+          </ErrorState>
+        </Card>
+      )}
 
-      <table className="mlp-table mlp-card">
-        <thead>
-          <tr>
-            <th>id</th>
-            <th>status</th>
-            <th>priority</th>
-            <th>gold</th>
-            <th>payload</th>
-            <th></th>
+      <Table
+        className="mlp-card"
+        caption="Units in this project matching the current filters"
+        columns={[
+          "id",
+          "status",
+          "priority",
+          "gold",
+          "payload",
+          { srLabel: "Actions" },
+        ]}
+        isEmpty={units.length === 0}
+        empty={
+          <EmptyState title="No units match these filters" data-testid="units-empty">
+            Widen the filters above, or add tasks to this project from the Add tasks section.
+          </EmptyState>
+        }
+      >
+        {units.map((u) => (
+          <tr key={u.id}>
+            <td className="mlp-mono">#{u.id}</td>
+            <td>{u.status}</td>
+            <td>{u.priority}</td>
+            <td>{u.is_gold ? <Pill tone="warn">gold</Pill> : ""}</td>
+            <td className="mlp-payload-cell">{JSON.stringify(u.payload)}</td>
+            <td>
+              {/* Ghost: one of these sits in every row, and a bordered button
+                  per row turns the table into a column of buttons with some
+                  data beside them. */}
+              <Button variant="ghost" size="sm" onClick={() => setSelected(u.id)}>
+                detail
+              </Button>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {units.map((u) => (
-            <tr key={u.id}>
-              <td className="mlp-mono">#{u.id}</td>
-              <td>{u.status}</td>
-              <td>{u.priority}</td>
-              <td>{u.is_gold ? <Pill tone="warn">gold</Pill> : ""}</td>
-              <td className="mlp-payload-cell">{JSON.stringify(u.payload)}</td>
-              <td>
-                <button className="mlp-btn" onClick={() => setSelected(u.id)}>
-                  detail
-                </button>
-              </td>
-            </tr>
-          ))}
-          {units.length === 0 && (
-            <tr>
-              <td colSpan={6} className="mlp-muted">
-                No units match these filters.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+        ))}
+      </Table>
 
       {selected !== null && (
         <UnitDrawer client={client} unitId={selected} onClose={() => setSelected(null)} />
@@ -163,12 +171,18 @@ function UnitDrawer({
       <aside className="mlp-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="mlp-drawer-head">
           <h3>Unit #{unitId}</h3>
-          <button className="mlp-btn" onClick={onClose}>
-            close
-          </button>
+          <Button onClick={onClose}>close</Button>
         </div>
-        {error && <div className="mlp-error">{error}</div>}
-        {!detail && !error && <p>Loading…</p>}
+        {error && (
+          <ErrorState title="Could not load this unit" inline data-testid="unit-detail-error">
+            {error}
+          </ErrorState>
+        )}
+        {!detail && !error && (
+          <p className="mlp-muted" role="status">
+            Loading unit…
+          </p>
+        )}
         {detail && (
           <>
             <div className="mlp-kv">
@@ -186,32 +200,27 @@ function UnitDrawer({
             <pre className="mlp-pre">{JSON.stringify(detail.payload, null, 2)}</pre>
 
             <h4>Labels ({detail.labels.length})</h4>
-            <table className="mlp-table">
-              <thead>
-                <tr>
-                  <th>annotator</th>
-                  <th>kind</th>
-                  <th>rep</th>
-                  <th>variant</th>
-                  <th>value</th>
-                  <th>valid</th>
+            <Table
+              caption={`Labels submitted on unit ${unitId}`}
+              columns={["annotator", "kind", "rep", "variant", "value", "valid"]}
+              isEmpty={detail.labels.length === 0}
+              empty={
+                <EmptyState title="No labels on this unit yet" data-testid="unit-labels-empty">
+                  This unit is still waiting for its first submission.
+                </EmptyState>
+              }
+            >
+              {detail.labels.map((l) => (
+                <tr key={l.label_id} className={l.is_valid ? "" : "mlp-voided"}>
+                  <td className="mlp-mono">{l.annotator_name ?? `#${l.annotator_id}`}</td>
+                  <td>{l.annotator_kind}</td>
+                  <td>{l.reputation?.toFixed(2) ?? "—"}</td>
+                  <td className="mlp-mono">{l.variant ? JSON.stringify(l.variant) : "—"}</td>
+                  <td>{JSON.stringify(l.value)}</td>
+                  <td>{l.is_valid ? "✓" : "voided"}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {detail.labels.map((l) => (
-                  <tr key={l.label_id} className={l.is_valid ? "" : "mlp-voided"}>
-                    <td className="mlp-mono">
-                      {l.annotator_name ?? `#${l.annotator_id}`}
-                    </td>
-                    <td>{l.annotator_kind}</td>
-                    <td>{l.reputation?.toFixed(2) ?? "—"}</td>
-                    <td className="mlp-mono">{l.variant ? JSON.stringify(l.variant) : "—"}</td>
-                    <td>{JSON.stringify(l.value)}</td>
-                    <td>{l.is_valid ? "✓" : "voided"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </Table>
 
             {detail.consensus && (
               <>

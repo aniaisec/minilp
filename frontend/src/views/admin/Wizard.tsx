@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Button, Card, ErrorState } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { IngestReport, PayloadFormat, Template, TemplateSample } from "../../api/types";
 import { exampleFor, missingRequiredFields } from "./payloadExamples";
@@ -119,10 +120,15 @@ export function Wizard({
   return (
     <div className="mlp-stack-lg" style={{ maxWidth: "var(--content-lg)" }}>
       <h2>New project</h2>
-      {error && <div className="mlp-card mlp-error">{error}</div>}
+      {error && (
+        <Card>
+          <ErrorState title="The project could not be created" data-testid="wizard-error">
+            {error}
+          </ErrorState>
+        </Card>
+      )}
 
-      <section className="mlp-card">
-        <h3>1 · Template</h3>
+      <Card title="1 · Template">
         <label className="mlp-block-label">
           Start from
           <select
@@ -154,10 +160,9 @@ export function Wizard({
           None of these fit? <a href="#/admin/templates/new">Build one from scratch</a> in
           the visual builder (§2.5), then come back and pick it here.
         </p>
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3>2 · Name & guidelines</h3>
+      <Card title="2 · Name & guidelines">
         <label className="mlp-block-label">
           Project name
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Q3 toxicity" />
@@ -172,15 +177,18 @@ export function Wizard({
             placeholder="Shown as a collapsible panel in the annotation view."
           />
         </label>
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3>3 · Units</h3>
-        <p className="mlp-muted">
-          Upload a <strong>.json</strong> (array of unit objects) or <strong>.tsv</strong> (header
-          row + one unit per line) file, or paste directly below. Rows missing a required field are
-          rejected with their line number; valid rows are ingested.
-        </p>
+      <Card
+        title="3 · Units"
+        description={
+          <>
+            Upload a <strong>.json</strong> (array of unit objects) or <strong>.tsv</strong>{" "}
+            (header row + one unit per line) file, or paste directly below. Rows missing a
+            required field are rejected with their line number; valid rows are ingested.
+          </>
+        }
+      >
 
         <div className="mlp-filters" style={{ marginBottom: 10 }}>
           <label>
@@ -263,10 +271,9 @@ export function Wizard({
             )}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="mlp-card">
-        <h3>4 · Overlap, agreement & golds</h3>
+      <Card title="4 · Overlap, agreement & golds">
         <div className="mlp-grid-2">
           <label className="mlp-block-label">
             Labels per unit (K)
@@ -310,16 +317,12 @@ export function Wizard({
           </p>
         )}
         {maxK < k && <p className="mlp-error-text">Max labels must be ≥ K.</p>}
-      </section>
+      </Card>
 
       <div className="mlp-actions">
-        <button
-          className="mlp-btn mlp-btn-primary"
-          disabled={!canCreate || busy}
-          onClick={create}
-        >
+        <Button variant="primary" size="lg" disabled={!canCreate || busy} onClick={create}>
           {busy ? "Creating…" : "Create project"}
-        </button>
+        </Button>
       </div>
     </div>
   );

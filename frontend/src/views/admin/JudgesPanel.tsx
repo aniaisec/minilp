@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type {
   Costs,
@@ -143,103 +144,105 @@ export function JudgesPanel({
   return (
     <div className="mlp-stack-lg" data-testid="judges-panel">
       {error && (
-        <div className="mlp-error-text" data-testid="judges-error">
+        <ErrorState title="The last judge action failed" inline data-testid="judges-error">
           {error}
-        </div>
+        </ErrorState>
       )}
 
       {/* --- enrolled judges + run controls --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Model judges (§7.1)</h3>
-        <p className="mlp-muted">
-          A judge is enrolled as a <code>kind=model</code> annotator and pulls work through the
-          same <code>next</code>/<code>submit</code> loop humans use — so leasing, gold
-          injection, variant balance and the annotator-unit exclusion all apply to it
-          unchanged.
-        </p>
-
-        {enrolled.length === 0 ? (
-          <p className="mlp-muted" data-testid="judges-empty">
-            No judges enrolled on this project yet.
-          </p>
-        ) : (
-          <table className="mlp-table" data-testid="judges-table">
-            <thead>
-              <tr>
-                <th>Judge</th>
-                <th>Provider / model</th>
-                <th>Labels</th>
-                <th>Spent</th>
-                <th>Budget</th>
-                <th />
+      <Card
+        headingLevel={3}
+        title="Model judges (§7.1)"
+        description={
+          <>
+            A judge is enrolled as a <code>kind=model</code> annotator and pulls work through the
+            same <code>next</code>/<code>submit</code> loop humans use — so leasing, gold
+            injection, variant balance and the annotator-unit exclusion all apply to it
+            unchanged.
+          </>
+        }
+      >
+        <Table
+          caption="Judges enrolled on this project, with spend against budget"
+          data-testid="judges-table"
+          columns={[
+            "Judge",
+            "Provider / model",
+            "Labels",
+            "Spent",
+            "Budget",
+            { srLabel: "Actions" },
+          ]}
+          isEmpty={enrolled.length === 0}
+          empty={
+            <EmptyState title="No judges enrolled yet" data-testid="judges-empty">
+              Enroll a judge below to have a model pull work through the same loop your human
+              annotators use. Nothing runs until you start a run.
+            </EmptyState>
+          }
+        >
+          {enrolled.map((j) => {
+            const usage = capUsage(j.budget, j.spend);
+            return (
+              <tr key={j.judge_config_id} data-testid={`judge-row-${j.judge_config_id}`}>
+                <td>
+                  <strong>{j.display_name}</strong>
+                  <div className="mlp-muted mlp-mono" style={{ fontSize: "0.85em" }}>
+                    annotator #{j.annotator_id ?? "—"}
+                  </div>
+                </td>
+                <td className="mlp-mono">
+                  {j.provider}
+                  <div className="mlp-muted" style={{ fontSize: "0.85em" }}>
+                    {j.model_id}
+                  </div>
+                </td>
+                <td>{j.spend?.labels ?? 0}</td>
+                <td>
+                  {j.priced ? (
+                    money(j.spend?.cost_usd)
+                  ) : (
+                    <span title="No price is known for this model — this is not $0.00, it is unknown.">
+                      unpriced
+                    </span>
+                  )}
+                  {j.spend && j.spend.cache_hits > 0 && (
+                    <div className="mlp-muted" style={{ fontSize: "0.85em" }}>
+                      {j.spend.cache_hits} cached
+                    </div>
+                  )}
+                </td>
+                <td style={{ minWidth: 160 }}>
+                  {usage ? (
+                    usage.map(([label, used, cap]) => (
+                      <Bar
+                        key={label}
+                        frac={cap ? used / cap : 0}
+                        color={used / cap >= 1 ? "var(--danger, #c33)" : "var(--accent)"}
+                        label={`${label} ${used <= 1 ? used.toFixed(4) : Math.round(used)} / ${cap}`}
+                      />
+                    ))
+                  ) : (
+                    <span className="mlp-muted">uncapped</span>
+                  )}
+                </td>
+                <td>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-testid={`detach-${j.judge_config_id}`}
+                    disabled={busy !== null}
+                    onClick={() =>
+                      void act("detach", () => client.detachJudge(projectId, j.judge_config_id))
+                    }
+                  >
+                    Detach
+                  </Button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {enrolled.map((j) => {
-                const usage = capUsage(j.budget, j.spend);
-                return (
-                  <tr key={j.judge_config_id} data-testid={`judge-row-${j.judge_config_id}`}>
-                    <td>
-                      <strong>{j.display_name}</strong>
-                      <div className="mlp-muted mlp-mono" style={{ fontSize: "0.85em" }}>
-                        annotator #{j.annotator_id ?? "—"}
-                      </div>
-                    </td>
-                    <td className="mlp-mono">
-                      {j.provider}
-                      <div className="mlp-muted" style={{ fontSize: "0.85em" }}>
-                        {j.model_id}
-                      </div>
-                    </td>
-                    <td>{j.spend?.labels ?? 0}</td>
-                    <td>
-                      {j.priced ? (
-                        money(j.spend?.cost_usd)
-                      ) : (
-                        <span title="No price is known for this model — this is not $0.00, it is unknown.">
-                          unpriced
-                        </span>
-                      )}
-                      {j.spend && j.spend.cache_hits > 0 && (
-                        <div className="mlp-muted" style={{ fontSize: "0.85em" }}>
-                          {j.spend.cache_hits} cached
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ minWidth: 160 }}>
-                      {usage ? (
-                        usage.map(([label, used, cap]) => (
-                          <Bar
-                            key={label}
-                            frac={cap ? used / cap : 0}
-                            color={used / cap >= 1 ? "var(--danger, #c33)" : "var(--accent)"}
-                            label={`${label} ${used <= 1 ? used.toFixed(4) : Math.round(used)} / ${cap}`}
-                          />
-                        ))
-                      ) : (
-                        <span className="mlp-muted">uncapped</span>
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        className="mlp-btn"
-                        data-testid={`detach-${j.judge_config_id}`}
-                        disabled={busy !== null}
-                        onClick={() =>
-                          void act("detach", () =>
-                            client.detachJudge(projectId, j.judge_config_id),
-                          )
-                        }
-                      >
-                        Detach
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+            );
+          })}
+        </Table>
 
         <div className="mlp-actions" style={{ marginTop: 12, alignItems: "center" }}>
           <label className="mlp-inline-label">
@@ -254,35 +257,40 @@ export function JudgesPanel({
               style={{ width: 90 }}
             />
           </label>
-          <button
-            className="mlp-btn mlp-btn-primary"
+          <Button
+            variant="primary"
             data-testid="judge-dry-run"
             disabled={busy !== null || enrolled.length === 0}
             onClick={() => void run(true)}
           >
             {busy === "dry" ? "Pricing…" : "Dry run (estimate cost)"}
-          </button>
-          <button
-            className="mlp-btn"
+          </Button>
+          <Button
             data-testid="judge-run"
             disabled={busy !== null || enrolled.length === 0}
             onClick={() => void run(false)}
           >
             {busy === "run" ? "Running…" : "Run judges"}
-          </button>
+          </Button>
         </div>
         <p className="mlp-muted" style={{ marginTop: 6 }}>
           A dry run assembles the real prompts and prices them without calling the provider,
           then releases every slot it looked at. Find out what a run costs before it costs it.
         </p>
-      </section>
+      </Card>
 
       {/* --- last run report --- */}
       {report && (
-        <section className="mlp-card" data-testid="run-report">
-          <h3 style={{ marginTop: 0 }}>
-            {report.dry_run ? "Estimate" : "Run report"}
-          </h3>
+        <Card
+          headingLevel={3}
+          data-testid="run-report"
+          title={report.dry_run ? "Estimate" : "Run report"}
+          description={
+            report.dry_run
+              ? "Priced against the real prompts. Nothing was charged and every slot was released."
+              : "What the last live run actually did."
+          }
+        >
           <div className="mlp-stats">
             <StatCard
               label={report.dry_run ? "Estimated cost" : "Cost"}
@@ -321,13 +329,12 @@ export function JudgesPanel({
               </li>
             ))}
           </ul>
-        </section>
+        </Card>
       )}
 
       {/* --- costs --- */}
       {costs && costs.judges.length > 0 && (
-        <section className="mlp-card" data-testid="costs-panel">
-          <h3 style={{ marginTop: 0 }}>Cost (§5 /analytics/costs)</h3>
+        <Card headingLevel={3} data-testid="costs-panel" title="Cost (§5 /analytics/costs)">
           <div className="mlp-stats">
             <StatCard label="Judge spend" value={money(costs.totals.cost_usd)} />
             <StatCard
@@ -338,59 +345,55 @@ export function JudgesPanel({
             <StatCard label="Cache hit rate" value={pct(costs.totals.cache_hit_rate)} />
             <StatCard label="Tokens" value={costs.totals.tokens.toLocaleString()} />
           </div>
-          <table className="mlp-table" style={{ marginTop: 12 }}>
-            <thead>
-              <tr>
-                <th>Judge</th>
-                <th>Labels</th>
-                <th>Cost</th>
-                <th>$/label</th>
-                <th>Cache</th>
-                <th>Avg latency</th>
+          <Table
+            caption="Per-judge cost and latency"
+            className="mlp-table-spaced"
+            columns={["Judge", "Labels", "Cost", "$/label", "Cache", "Avg latency"]}
+          >
+            {costs.judges.map((j) => (
+              <tr key={j.annotator_id}>
+                <td>{j.display_name}</td>
+                <td>{j.labels}</td>
+                <td>{money(j.cost_usd)}</td>
+                <td>{money(j.cost_per_label)}</td>
+                <td>{pct(j.cache_hit_rate)}</td>
+                <td>{j.avg_latency_ms === null ? "—" : `${Math.round(j.avg_latency_ms)} ms`}</td>
               </tr>
-            </thead>
-            <tbody>
-              {costs.judges.map((j) => (
-                <tr key={j.annotator_id}>
-                  <td>{j.display_name}</td>
-                  <td>{j.labels}</td>
-                  <td>{money(j.cost_usd)}</td>
-                  <td>{money(j.cost_per_label)}</td>
-                  <td>{pct(j.cache_hit_rate)}</td>
-                  <td>{j.avg_latency_ms === null ? "—" : `${Math.round(j.avg_latency_ms)} ms`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+            ))}
+          </Table>
+        </Card>
       )}
 
       {/* --- enroll an existing config / create a new one --- */}
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Enroll a judge</h3>
-        {unenrolled.length > 0 && (
-          <div className="mlp-actions" style={{ flexWrap: "wrap", marginBottom: 10 }}>
+      <Card
+        headingLevel={3}
+        title="Enroll a judge"
+        actions={
+          <Button data-testid="toggle-judge-form" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? "Cancel" : "New judge config…"}
+          </Button>
+        }
+      >
+        {unenrolled.length > 0 ? (
+          <div className="mlp-actions" style={{ flexWrap: "wrap" }}>
             {unenrolled.map((c) => (
-              <button
+              <Button
                 key={c.id}
-                className="mlp-btn"
                 data-testid={`attach-${c.id}`}
                 disabled={busy !== null}
                 onClick={() => void act("attach", () => client.attachJudge(projectId, c.id))}
               >
                 + {c.name} v{c.prompt_version}{" "}
                 <span className="mlp-muted">({c.provider})</span>
-              </button>
+              </Button>
             ))}
           </div>
+        ) : (
+          <EmptyState title="No unenrolled judge configs" inline data-testid="unenrolled-empty">
+            Every judge config you have is already on this project. Create a new one to add
+            another.
+          </EmptyState>
         )}
-        <button
-          className="mlp-btn"
-          data-testid="toggle-judge-form"
-          onClick={() => setShowForm((v) => !v)}
-        >
-          {showForm ? "Cancel" : "New judge config…"}
-        </button>
         {showForm && (
           <JudgeForm
             providers={providers}
@@ -404,41 +407,32 @@ export function JudgesPanel({
             }}
           />
         )}
-      </section>
+      </Card>
 
       {/* --- run history --- */}
       {runs.length > 0 && (
-        <section className="mlp-card" data-testid="run-history">
-          <h3 style={{ marginTop: 0 }}>Run history</h3>
-          <p className="mlp-muted">
-            Estimates and live runs sit side by side on purpose — it is the only honest way
-            to check whether the estimate was any good.
-          </p>
-          <table className="mlp-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Kind</th>
-                <th>Judge</th>
-                <th>Labels</th>
-                <th>Cost</th>
-                <th>Ended</th>
+        <Card
+          headingLevel={3}
+          data-testid="run-history"
+          title="Run history"
+          description="Estimates and live runs sit side by side on purpose — it is the only honest way to check whether the estimate was any good."
+        >
+          <Table
+            caption="Judge runs, most recent first"
+            columns={["#", "Kind", "Judge", "Labels", "Cost", "Ended"]}
+          >
+            {runs.slice(0, 15).map((r) => (
+              <tr key={r.id}>
+                <td className="mlp-mono">{r.id}</td>
+                <td>{r.dry_run ? "estimate" : "live"}</td>
+                <td className="mlp-mono">#{r.judge_config_id}</td>
+                <td>{r.labels_written}</td>
+                <td>{money(r.dry_run ? r.estimated_cost_usd : r.cost_usd)}</td>
+                <td className="mlp-muted">{stopReasonText(r.stopped_reason)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {runs.slice(0, 15).map((r) => (
-                <tr key={r.id}>
-                  <td className="mlp-mono">{r.id}</td>
-                  <td>{r.dry_run ? "estimate" : "live"}</td>
-                  <td className="mlp-mono">#{r.judge_config_id}</td>
-                  <td>{r.labels_written}</td>
-                  <td>{money(r.dry_run ? r.estimated_cost_usd : r.cost_usd)}</td>
-                  <td className="mlp-muted">{stopReasonText(r.stopped_reason)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+            ))}
+          </Table>
+        </Card>
       )}
     </div>
   );

@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../components/ui";
 import type { MiniLpClient } from "../api/client";
 import type { AvailableProject } from "../api/types";
 
@@ -122,53 +123,60 @@ export function Home({ client, annotator, apiKey, initialView = "table" }: HomeP
           </span>
         </div>
         <div className="mlp-view-toggle" role="group" aria-label="View">
-          <button
-            type="button"
-            className={`mlp-btn ${view === "table" ? "mlp-btn-primary" : ""}`}
+          {/* The selected view is the primary one, so the variant tracks the
+              pressed state rather than being fixed — `aria-pressed` carries the
+              same fact to anyone not looking at the colour. */}
+          <Button
+            variant={view === "table" ? "primary" : "secondary"}
             aria-pressed={view === "table"}
             onClick={() => setAndRemember("table")}
             data-testid="view-table"
           >
             Table
-          </button>
-          <button
-            type="button"
-            className={`mlp-btn ${view === "cards" ? "mlp-btn-primary" : ""}`}
+          </Button>
+          <Button
+            variant={view === "cards" ? "primary" : "secondary"}
             aria-pressed={view === "cards"}
             onClick={() => setAndRemember("cards")}
             data-testid="view-cards"
           >
             Cards
-          </button>
+          </Button>
         </div>
       </div>
 
       {error && (
-        <div className="mlp-card" style={{ borderColor: "var(--danger)" }} data-testid="home-error">
-          {error}
-        </div>
+        <Card>
+          <ErrorState title="Could not load your tasks" data-testid="home-error">
+            {error}
+          </ErrorState>
+        </Card>
       )}
-      {!projects && !error && <div className="mlp-card">Loading tasks…</div>}
+      {!projects && !error && (
+        <Card>
+          <p className="mlp-muted" role="status">
+            Loading tasks…
+          </p>
+        </Card>
+      )}
 
       {empty && (
-        <div className="mlp-card mlp-muted" data-testid="home-empty">
-          <strong>No projects yet.</strong>
-          <p style={{ margin: "6px 0 0" }}>
+        <Card>
+          <EmptyState title="No projects yet" data-testid="home-empty">
             Nothing has been set up for labeling. An admin creates projects from the admin
             surface — once one exists it will appear here.
-          </p>
-        </div>
+          </EmptyState>
+        </Card>
       )}
 
       {drained && (
-        <div className="mlp-card mlp-muted" data-testid="home-drained">
-          <strong>All caught up.</strong>
-          <p style={{ margin: "6px 0 0" }}>
+        <Card>
+          <EmptyState title="All caught up" data-testid="home-drained">
             {totals.mine > 0
               ? `You have labeled everything available to you (${totals.mine} so far). New work will show up here.`
               : "There is no work available to you right now."}
-          </p>
-        </div>
+          </EmptyState>
+        </Card>
       )}
 
       {projects && projects.length > 0 && view === "table" && (
@@ -191,67 +199,68 @@ function HomeTable({
   apiKey: string;
 }) {
   return (
-    <table className="mlp-table mlp-card" data-testid="home-table">
-      <thead>
-        <tr>
-          <th>Task</th>
-          <th>Labels needed</th>
-          <th>Units open</th>
-          <th>Your labels</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {projects.map((p) => {
-          const disabled = !p.eligible || p.available_labels === 0;
-          const note = blockedOrDone(p);
-          return (
-            <tr
-              key={p.project_id}
-              data-testid={`home-row-${p.project_id}`}
-              className={disabled ? "" : "mlp-landing-row"}
-              onClick={() => !disabled && openProject(p.project_id, annotator, apiKey)}
-            >
-              <td>
-                <div className="mlp-landing-name">{p.name}</div>
-                {p.blocked_reason && (
-                  <div className="mlp-error-text" style={{ fontSize: 12 }}>
-                    {p.blocked_reason}
-                  </div>
-                )}
-                {!p.blocked_reason && note && (
-                  <div className="mlp-muted" style={{ fontSize: 12 }}>
-                    {note}
-                  </div>
-                )}
-                {!note && p.description && (
-                  <div className="mlp-muted" style={{ fontSize: 12 }}>
-                    {p.description}
-                  </div>
-                )}
-              </td>
-              <td data-testid={`home-row-${p.project_id}-available`}>
-                <strong>{p.available_labels}</strong>
-              </td>
-              <td>{p.open_units}</td>
-              <td>{p.your_labels}</td>
-              <td>
-                <button
-                  className="mlp-btn mlp-btn-primary"
-                  disabled={disabled}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openProject(p.project_id, annotator, apiKey);
-                  }}
-                >
-                  {p.available_labels === 0 ? "Done" : "Label"}
-                </button>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <Table
+      className="mlp-card"
+      caption="Projects available to you for labeling"
+      data-testid="home-table"
+      columns={[
+        "Task",
+        "Labels needed",
+        "Units open",
+        "Your labels",
+        { srLabel: "Start labeling" },
+      ]}
+    >
+      {projects.map((p) => {
+        const disabled = !p.eligible || p.available_labels === 0;
+        const note = blockedOrDone(p);
+        return (
+          <tr
+            key={p.project_id}
+            data-testid={`home-row-${p.project_id}`}
+            className={disabled ? "" : "mlp-landing-row"}
+            onClick={() => !disabled && openProject(p.project_id, annotator, apiKey)}
+          >
+            <td>
+              <div className="mlp-landing-name">{p.name}</div>
+              {p.blocked_reason && (
+                <div className="mlp-error-text" style={{ fontSize: 12 }}>
+                  {p.blocked_reason}
+                </div>
+              )}
+              {!p.blocked_reason && note && (
+                <div className="mlp-muted" style={{ fontSize: 12 }}>
+                  {note}
+                </div>
+              )}
+              {!note && p.description && (
+                <div className="mlp-muted" style={{ fontSize: 12 }}>
+                  {p.description}
+                </div>
+              )}
+            </td>
+            <td data-testid={`home-row-${p.project_id}-available`}>
+              <strong>{p.available_labels}</strong>
+            </td>
+            <td>{p.open_units}</td>
+            <td>{p.your_labels}</td>
+            <td>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={disabled}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openProject(p.project_id, annotator, apiKey);
+                }}
+              >
+                {p.available_labels === 0 ? "Done" : "Label"}
+              </Button>
+            </td>
+          </tr>
+        );
+      })}
+    </Table>
   );
 }
 
@@ -322,13 +331,14 @@ function HomeCards({
               <span style={{ width: `${percent}%` }} />
             </div>
 
-            <button
-              className="mlp-btn mlp-btn-primary mlp-project-card-cta"
+            <Button
+              variant="primary"
+              className="mlp-project-card-cta"
               disabled={disabled}
               onClick={() => openProject(p.project_id, annotator, apiKey)}
             >
               {p.available_labels === 0 ? "Done" : "Label"}
-            </button>
+            </Button>
           </div>
         );
       })}

@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { ProjectSummary } from "../../api/types";
 import { StartLabeling } from "./StartLabeling";
@@ -35,14 +36,39 @@ export function Dashboard({
           and a second "Projects" directly beneath it is noise in the heading
           outline as well as on the page. */}
       <div className="mlp-actions" style={{ justifyContent: "flex-end" }}>
-        <button className="mlp-btn mlp-btn-primary" onClick={onNew}>
+        <Button variant="primary" onClick={onNew}>
           + New project
-        </button>
+        </Button>
       </div>
-      {error && <div className="mlp-card mlp-error">{error}</div>}
-      {!projects && !error && <div className="mlp-card">Loading…</div>}
+      {error && (
+        <Card>
+          <ErrorState title="Could not load your projects" data-testid="dashboard-error">
+            {error}
+          </ErrorState>
+        </Card>
+      )}
+      {!projects && !error && (
+        <Card>
+          <p className="mlp-muted" role="status">
+            Loading projects…
+          </p>
+        </Card>
+      )}
       {projects && projects.length === 0 && (
-        <div className="mlp-card mlp-muted">No projects yet — create one to get started.</div>
+        <Card>
+          <EmptyState
+            title="No projects yet"
+            data-testid="dashboard-empty"
+            action={
+              <Button variant="primary" onClick={onNew}>
+                + New project
+              </Button>
+            }
+          >
+            A project pairs a template with a pool of units and the rules for labeling them.
+            Create one to get started.
+          </EmptyState>
+        </Card>
       )}
       <div className="mlp-project-grid">
         {projects?.map((p) => (

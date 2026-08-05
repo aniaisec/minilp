@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { Webhook, WebhookDelivery } from "../../api/types";
 
@@ -103,59 +104,51 @@ export function WebhooksPanel({
 
   return (
     <div className="mlp-stack-lg" data-testid="webhooks-panel">
-      <section className="mlp-card">
-        <h3 style={{ marginTop: 0 }}>Alerts (§7.3)</h3>
-        <p className="mlp-muted">
-          Webhooks add no new trigger logic — they fire off checks that already run on every
-          submit and every judge call. Deliveries are HMAC-signed with your secret and retried
-          with backoff; the log below records every attempt.
-        </p>
-
+      <Card
+        headingLevel={3}
+        title="Alerts (§7.3)"
+        description="Webhooks add no new trigger logic — they fire off checks that already run on every submit and every judge call. Deliveries are HMAC-signed with your secret and retried with backoff; the log below records every attempt."
+      >
         {error && (
-          <div className="mlp-error-text" data-testid="webhooks-error">
+          <ErrorState title="The last webhook action failed" inline data-testid="webhooks-error">
             {error}
-          </div>
+          </ErrorState>
         )}
 
-        {hooks.length === 0 ? (
-          <p className="mlp-muted" data-testid="webhooks-empty">
-            No webhooks registered for this project.
-          </p>
-        ) : (
-          <table className="mlp-table" data-testid="webhooks-table">
-            <thead>
-              <tr>
-                <th>Event</th>
-                <th>Target</th>
-                <th>Scope</th>
-                <th>Signed</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {hooks.map((h) => (
-                <tr key={h.id} data-testid={`webhook-row-${h.id}`}>
-                  <td className="mlp-mono">{h.event}</td>
-                  <td className="mlp-mono" style={{ wordBreak: "break-all" }}>
-                    {h.target_url}
-                  </td>
-                  <td>{h.project_id === null ? "instance-wide" : "this project"}</td>
-                  <td>{h.has_secret ? "yes" : "no"}</td>
-                  <td>
-                    <button
-                      className="mlp-btn"
-                      data-testid={`delete-webhook-${h.id}`}
-                      disabled={busy}
-                      onClick={() => void act(() => client.deleteWebhook(h.id))}
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <Table
+          caption="Webhooks registered for this project"
+          data-testid="webhooks-table"
+          columns={["Event", "Target", "Scope", "Signed", { srLabel: "Actions" }]}
+          isEmpty={hooks.length === 0}
+          empty={
+            <EmptyState title="No webhooks registered" data-testid="webhooks-empty">
+              Nothing is being alerted for this project. Register a target below to be told when
+              a judge run stops at its cap or a unit escalates.
+            </EmptyState>
+          }
+        >
+          {hooks.map((h) => (
+            <tr key={h.id} data-testid={`webhook-row-${h.id}`}>
+              <td className="mlp-mono">{h.event}</td>
+              <td className="mlp-mono" style={{ wordBreak: "break-all" }}>
+                {h.target_url}
+              </td>
+              <td>{h.project_id === null ? "instance-wide" : "this project"}</td>
+              <td>{h.has_secret ? "yes" : "no"}</td>
+              <td>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  data-testid={`delete-webhook-${h.id}`}
+                  disabled={busy}
+                  onClick={() => void act(() => client.deleteWebhook(h.id))}
+                >
+                  Remove
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </Table>
 
         <div className="mlp-stack" style={{ marginTop: 14 }}>
           <label className="mlp-block-label">
@@ -202,50 +195,41 @@ export function WebhooksPanel({
             Only this project (uncheck for instance-wide)
           </label>
           <div className="mlp-actions">
-            <button
-              className="mlp-btn mlp-btn-primary"
+            <Button
+              variant="primary"
               data-testid="webhook-create"
               disabled={busy || !url.trim()}
               onClick={() => void create()}
             >
               Register webhook
-            </button>
+            </Button>
           </div>
         </div>
-      </section>
+      </Card>
 
       {deliveries.length > 0 && (
-        <section className="mlp-card" data-testid="deliveries-panel">
-          <h3 style={{ marginTop: 0 }}>Delivery log</h3>
-          <table className="mlp-table">
-            <thead>
-              <tr>
-                <th>Event</th>
-                <th>Status</th>
-                <th>Attempts</th>
-                <th>Code</th>
-                <th>When</th>
+        <Card headingLevel={3} data-testid="deliveries-panel" title="Delivery log">
+          <Table
+            caption="Recent webhook delivery attempts"
+            columns={["Event", "Status", "Attempts", "Code", "When"]}
+          >
+            {deliveries.slice(0, 20).map((d) => (
+              <tr key={d.id} data-testid={`delivery-${d.id}`}>
+                <td className="mlp-mono">{d.event}</td>
+                <td className={`mlp-status-${d.status}`}>{d.status}</td>
+                <td>{d.attempts}</td>
+                <td>{d.status_code ?? "—"}</td>
+                <td className="mlp-muted">{new Date(d.created_at).toLocaleString()}</td>
               </tr>
-            </thead>
-            <tbody>
-              {deliveries.slice(0, 20).map((d) => (
-                <tr key={d.id} data-testid={`delivery-${d.id}`}>
-                  <td className="mlp-mono">{d.event}</td>
-                  <td className={`mlp-status-${d.status}`}>{d.status}</td>
-                  <td>{d.attempts}</td>
-                  <td>{d.status_code ?? "—"}</td>
-                  <td className="mlp-muted">{new Date(d.created_at).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </Table>
           {deliveries.some((d) => d.status === "failed") && (
             <p className="mlp-muted" style={{ marginTop: 8 }} data-testid="deliveries-warning">
               A failed delivery means the alert never reached anyone — the run still stopped
               at its cap, but nobody was told.
             </p>
           )}
-        </section>
+        </Card>
       )}
     </div>
   );
