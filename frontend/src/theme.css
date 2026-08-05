@@ -665,26 +665,10 @@ pre.mlp-code {
   font-family: var(--font-mono);
 }
 
-/* tabs */
-.mlp-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border);
-}
-.mlp-tab {
-  padding: 8px 14px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  font-size: 14px;
-}
-.mlp-tab-active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
+/* The `.mlp-tabs` block lived here until phase 3 of the UX plan. Its only user
+   was the project view's horizontal tab strip, now a grouped secondary rail
+   (`.mlp-subnav`, at the end of this file). Deleted rather than kept "in case":
+   dead CSS is what made this file 1341 lines of unclear ownership. */
 
 /* filters */
 .mlp-filters {
@@ -1883,5 +1867,156 @@ input.mlp-number {
   }
   .mlp-admin-main {
     padding: var(--space-3);
+  }
+}
+
+/* =========================================================================
+   Project view — status line + grouped secondary rail (UX plan, phase 3)
+   =========================================================================
+
+   The nine sections were a horizontal strip of tabs that overflowed on a
+   laptop and said nothing about how they related to each other. They are now a
+   vertical rail inside the project, grouped under quiet headings, marked with
+   the same leading-edge accent bar the primary rail uses — so "where am I"
+   reads identically at both navigation levels.
+   ========================================================================= */
+
+.mlp-project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* ---- header status line ------------------------------------------------- */
+
+.mlp-project-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mlp-project-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+}
+.mlp-project-actions {
+  display: flex;
+  gap: var(--space-2);
+  /* Pushed to the trailing edge so the state reads left-to-right and the two
+     actions stay in the same place regardless of how long the state text is. */
+  margin-left: auto;
+}
+.mlp-project-head-error {
+  color: var(--danger);
+}
+/* The completion bar is the only bar on the page with no visible label, so it
+   needs to carry its own vertical rhythm rather than the label's. */
+.mlp-project-head .mlp-bar {
+  margin: 0;
+}
+
+/* ---- secondary rail ----------------------------------------------------- */
+
+.mlp-project-body {
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.mlp-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  position: sticky;
+  top: var(--sticky-top);
+}
+.mlp-subnav-group ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mlp-subnav-heading {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-3);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mlp-subnav-item {
+  display: flex;
+  align-items: center;
+  /* The 3px is the active bar's slot, reserved on every item so the label does
+     not shift when an item becomes current. */
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-decoration: none;
+  /* WCAG 2.2 target size. */
+  min-height: 32px;
+  transition: background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+.mlp-subnav-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.mlp-subnav-item[aria-current="page"] {
+  border-left-color: var(--accent-strong);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.mlp-project-panel {
+  min-width: 0;
+}
+
+/* Below 1100px the two rails plus a content column stop fitting. The sections
+   fold into a wrapping row above the panel — still grouped, still links, just
+   laid out horizontally. */
+@media (max-width: 1100px) {
+  .mlp-project-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mlp-subnav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-4) var(--space-5);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border);
+  }
+  .mlp-subnav-group ul {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .mlp-subnav-heading {
+    padding-left: 0;
+  }
+  .mlp-subnav-item {
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .mlp-subnav-item[aria-current="page"] {
+    border-left-color: transparent;
+    border-bottom-color: var(--accent-strong);
+  }
+}
+
+@media (max-width: 640px) {
+  .mlp-project-actions {
+    margin-left: 0;
+    width: 100%;
   }
 }

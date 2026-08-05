@@ -112,9 +112,81 @@ export const TEMPLATES = [
   },
 ];
 
+export const BATCHES = [
+  {
+    id: 11,
+    project_id: 1,
+    name: "catalogue-2024-q3.jsonl",
+    source_filename: "catalogue-2024-q3.jsonl",
+    unit_count: 1200,
+    rejected_count: 4,
+  },
+  {
+    id: 12,
+    project_id: 1,
+    name: "catalogue-2024-q4.jsonl",
+    source_filename: "catalogue-2024-q4.jsonl",
+    unit_count: 642,
+    rejected_count: 1,
+  },
+];
+
+// A deliberately mixed page: two statuses, a gold, and an off-default priority,
+// so the unit browser's pills and columns are all exercised by the snapshot
+// rather than showing one repeated row.
+export const UNITS = [
+  {
+    id: 4821,
+    project_id: 1,
+    batch_id: 11,
+    payload: { image_url: "cdn/chairs/oak-dining-04.jpg", sku: "OAK-D-04" },
+    priority: 0.5,
+    is_gold: false,
+    status: "finalized",
+  },
+  {
+    id: 4822,
+    project_id: 1,
+    batch_id: 11,
+    payload: { image_url: "cdn/lamps/brass-arc-11.jpg", sku: "BRS-A-11" },
+    priority: 0.5,
+    is_gold: true,
+    status: "finalized",
+  },
+  {
+    id: 4823,
+    project_id: 1,
+    batch_id: 12,
+    payload: { image_url: "cdn/sofas/linen-3seat-02.jpg", sku: "LIN-S-02" },
+    priority: 0.9,
+    is_gold: false,
+    status: "labeled",
+  },
+  {
+    id: 4824,
+    project_id: 1,
+    batch_id: 12,
+    payload: { image_url: "cdn/desks/walnut-standing-07.jpg", sku: "WAL-D-07" },
+    priority: 0.5,
+    is_gold: false,
+    status: "in_progress",
+  },
+  {
+    id: 4825,
+    project_id: 1,
+    batch_id: 12,
+    payload: { image_url: "cdn/rugs/kilim-runner-19.jpg", sku: "KIL-R-19" },
+    priority: 0.5,
+    is_gold: false,
+    status: "pending",
+  },
+];
+
 /** Route table for the fetch stub: first matching pattern wins. */
 export const ROUTES: [RegExp, unknown][] = [
   [/\/api\/projects\/\d+\/progress/, PROGRESS],
+  [/\/api\/projects\/\d+\/batches/, BATCHES],
+  [/\/api\/projects\/\d+\/units/, UNITS],
   [/\/api\/projects\/\d+$/, { ...PROJECTS[0], config: {} }],
   [/\/api\/projects$/, PROJECTS],
   [/\/api\/templates$/, TEMPLATES],

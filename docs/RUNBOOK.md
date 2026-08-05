@@ -392,7 +392,7 @@ Then reload the review queue: 8 units, each with a merged proposal of `cat` at
 
 Project 7's active-learning loop needs nothing filled — its three checkpoints
 already ran at bootstrap. See the eval curve straight away, in the **Active
-learning** tab (`#/admin/project/7`) or by hand:
+learning** section (`#/admin/project/7/active-learning`) or by hand:
 
 ```powershell
 curl.exe -s -H "Authorization: Bearer $env:KEY" `
