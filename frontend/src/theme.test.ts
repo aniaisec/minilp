@@ -78,8 +78,13 @@ describe("token layer", () => {
     const referenced = new Set(
       Array.from(css.matchAll(/var\((--[\w-]+)/g), (m) => m[1]),
     );
-    // `--panel-count` is set inline by the panel-group widget, not in :root.
+    // Two properties are supplied per-element by a widget rather than declared
+    // in the token layer, and both have a fallback in the rule that reads them:
+    // `--panel-count` (panel-group) and `--grid-ratio` (the template's own
+    // split/columns ratio, passed as data so a media query can still fold the
+    // grid — an inline `grid-template-columns` could not be overridden).
     referenced.delete("--panel-count");
+    referenced.delete("--grid-ratio");
 
     expect([...referenced].filter((t) => !defined.has(t))).toEqual([]);
   });

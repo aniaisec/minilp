@@ -1,4 +1,4 @@
-// Build self-contained HTML snapshots of the admin surface for visual review.
+// Build self-contained HTML snapshots of the app's surfaces for visual review.
 //
 //   node scripts/snapshot.mjs before      → docs/screenshots/before/*.html
 //   node scripts/snapshot.mjs after       → docs/screenshots/after/*.html
@@ -37,6 +37,48 @@ const SCENARIOS = [
   { name: "project-narrow", hash: "#/admin/project/1", theme: "light", width: 1000 },
   { name: "dashboard-collapsed", hash: "#/admin", theme: "light", width: 1440, collapsed: true },
   { name: "dashboard-narrow", hash: "#/admin", theme: "light", width: 560 },
+
+  // Labeler surface (phase 4). `view: "annotate"` mounts the annotation loop
+  // directly rather than routing to it — see src/snapshot/entry.tsx.
+  //
+  // The clicks fill the two required answers, because the interesting state of
+  // the submit affordance is the enabled one, and an empty task would show the
+  // disabled button in every frame.
+  {
+    name: "annotate-light",
+    view: "annotate",
+    hash: "",
+    theme: "light",
+    width: 1440,
+    clicks: ["category-opt-chair", "framing-opt-4"],
+  },
+  {
+    name: "annotate-dark",
+    view: "annotate",
+    hash: "",
+    theme: "dark",
+    width: 1440,
+    clicks: ["category-opt-chair", "framing-opt-4"],
+  },
+  // 380px: the WCAG reflow width, where the sticky footer has to stay whole and
+  // stay clear of the last field.
+  {
+    name: "annotate-narrow",
+    view: "annotate",
+    hash: "",
+    theme: "light",
+    width: 380,
+    clicks: ["category-opt-chair", "framing-opt-4"],
+  },
+  // The hotkey dialog, which phase 4 groups and turns into a real dialog.
+  {
+    name: "annotate-hotkeys",
+    view: "annotate",
+    hash: "",
+    theme: "light",
+    width: 1440,
+    clicks: ["btn-help"],
+  },
 ];
 
 const result = await viteBuild({
@@ -111,6 +153,10 @@ const PAIRS = [
   ["Project view — 1000px, sections folded to a row", "project-narrow", 1000],
   ["Rail collapsed (mlp.navCollapsed = true)", "dashboard-collapsed", 1440],
   ["Narrow viewport — 560px", "dashboard-narrow", 560],
+  ["Labeler surface — light", "annotate-light", 1440],
+  ["Labeler surface — dark", "annotate-dark", 1440],
+  ["Labeler surface — 380px (WCAG reflow)", "annotate-narrow", 380],
+  ["Labeler surface — hotkey dialog", "annotate-hotkeys", 1440],
 ];
 
 const section = ([heading, name, width]) => `
@@ -132,7 +178,7 @@ writeFileSync(
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>MiniLP admin surface — before / after</title>
+    <title>MiniLP — before / after</title>
     <style>
       :root { --shot-w: 1440px; --shot-h: 900px; --scale: 0.45; }
       body { margin: 0; padding: 28px 32px 60px; background: #eef0f3; color: #1a1d23;
@@ -155,10 +201,11 @@ writeFileSync(
     </style>
   </head>
   <body>
-    <h1>MiniLP admin surface — before / after</h1>
+    <h1>MiniLP — before / after</h1>
     <p class="sub">
-      UX modernization plan, phases 1 (token layer), 2 (admin shell) and 3 (project view). Each frame is the real
-      application rendered against fixture data, at a 1440×900 viewport unless noted.
+      UX modernization plan, phases 1 (token layer), 2 (admin shell), 3 (project view) and
+      4 (labeler surface). Each frame is the real application rendered against fixture data,
+      at a 1440×900 viewport unless noted.
       Regenerate with <code>node frontend/scripts/snapshot.mjs after</code>.
     </p>${PAIRS.map(section).join("")}
   </body>

@@ -18,14 +18,29 @@ function inline(s: string): string {
     .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$1" rel="noreferrer">$1</a>');
 }
 
-export function renderMarkdown(src: string): string {
+export interface MarkdownOptions {
+  /**
+   * Push every heading down by this many levels (§ UX plan, "headings descending
+   * without skipping levels").
+   *
+   * Guidelines are author-written and reasonably start at `#`. Dropped into a
+   * page unchanged, that `#` becomes a second `<h1>` competing with the one
+   * that names the screen, and the document outline stops being navigable. The
+   * caller knows how deep the content sits; the renderer does not, so it is a
+   * parameter rather than a constant. Levels clamp at 6.
+   */
+  headingOffset?: number;
+}
+
+export function renderMarkdown(src: string, options: MarkdownOptions = {}): string {
+  const offset = Math.max(0, options.headingOffset ?? 0);
   const escaped = escapeHtml(src ?? "");
   const blocks = escaped.split(/\n{2,}/);
   const html: string[] = [];
   for (const block of blocks) {
     const h = block.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
-      const level = h[1].length;
+      const level = Math.min(6, h[1].length + offset);
       html.push(`<h${level}>${inline(h[2])}</h${level}>`);
       continue;
     }

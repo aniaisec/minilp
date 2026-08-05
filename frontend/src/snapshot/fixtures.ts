@@ -182,6 +182,89 @@ export const UNITS = [
   },
 ];
 
+/* -------------------------------------------------------------------------
+   Labeler surface (phase 4).
+
+   The annotation view is mounted directly rather than routed to, because its
+   config lives in the query string and a `file://` snapshot cannot carry one
+   reliably. Mounting `Annotate` with a fixture client is also closer to what
+   is under review: the task bar, the rail footer and the widgets, not the
+   query-string plumbing that picks a project.
+   ------------------------------------------------------------------------- */
+
+/** A self-contained stand-in for the unit's photo — no network, no asset dir. */
+const SWATCH =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420">
+       <rect width="640" height="420" fill="#e7e2d8"/>
+       <rect x="150" y="120" width="340" height="26" rx="6" fill="#8b6f4e"/>
+       <rect x="168" y="146" width="18" height="150" fill="#8b6f4e"/>
+       <rect x="454" y="146" width="18" height="150" fill="#8b6f4e"/>
+       <rect x="150" y="86" width="340" height="34" rx="10" fill="#a9855f"/>
+       <text x="320" y="380" font-family="system-ui" font-size="22" fill="#6b625a"
+             text-anchor="middle">oak dining chair · OAK-D-04</text>
+     </svg>`,
+  );
+
+/** Deliberately multi-input: one widget of each kind the phase-4 audit touched,
+ *  so the rail is long enough that the sticky footer has something to prove. */
+export const LABEL_SCHEMA = {
+  name: "image-qa",
+  version: 3,
+  description: "Is the product visible, in focus, and correctly framed?",
+  layout: { arrangement: "split", ratio: [3, 2], width: "xl" },
+  display: [
+    { type: "image", source: "$unit.image_url", render: { fit: "contain", zoom: true } },
+    { type: "text", source: "$unit.context", optional: true, render: { max_lines: 8 } },
+  ],
+  inputs: [
+    {
+      id: "category",
+      type: "radio",
+      label: "What is shown?",
+      options: ["chair", "table", "lamp", "rug"],
+      allow_other: true,
+      required: true,
+      hotkeys: "auto",
+    },
+    {
+      id: "framing",
+      type: "rating",
+      label: "Framing quality",
+      scale: { points: 5, labels: ["unusable", "poor", "ok", "good", "excellent"] },
+      required: true,
+    },
+    {
+      id: "issues",
+      type: "ranking",
+      label: "Rank the issues, worst first",
+      options: ["blurry", "cropped", "bad lighting", "cluttered"],
+    },
+    { id: "notes", type: "free_text", label: "Anything else worth flagging?", help: "Optional." },
+  ],
+  variants: null,
+};
+
+export const LABEL_GUIDELINES = [
+  "Judge the **photo**, not the product.",
+  "",
+  "- A product half out of frame is `cropped`, even if it is sharp.",
+  "- Shadow across the product is `bad lighting`, not `unusable`.",
+  "- When two labels fit, pick the one a shopper would complain about first.",
+].join("\n");
+
+export const LABEL_TASK = {
+  slot_id: 90210,
+  unit_id: 4821,
+  project_id: 1,
+  payload: {
+    image_url: SWATCH,
+    context: "Catalogue batch catalogue-2024-q3.jsonl · supplier photo, unedited.",
+  },
+  variant: null,
+};
+
 /** Route table for the fetch stub: first matching pattern wins. */
 export const ROUTES: [RegExp, unknown][] = [
   [/\/api\/projects\/\d+\/progress/, PROGRESS],

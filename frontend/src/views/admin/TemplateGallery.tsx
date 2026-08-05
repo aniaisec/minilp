@@ -368,6 +368,10 @@ export function TemplateGallery({
                   projectId={0}
                   schema={selected.schema}
                   guidelines={selected.schema.description ?? ""}
+                  // Inside the admin page: no second `<h1>`, no second `<main>`,
+                  // no second skip link. The teal accent stays, because that is
+                  // what an annotator sees.
+                  embedded
                 />
               )}
             </div>

@@ -18,7 +18,12 @@ export function ReviewPage({
   homeHref?: string;
 }) {
   return (
-    <div className="mlp-app">
+    // Teal, like the labeling surface and for the same reason: reviewing
+    // produces data. The mode block in theme.css treats "review" and "label"
+    // identically — the word in the chip is what separates them (§ UX plan,
+    // mode identity).
+    <div className="mlp-app mlp-mode-inset" data-mode="review">
+      <div className="mlp-mode-bar" aria-hidden="true" />
       <Review
         client={client}
         projectId={projectId}

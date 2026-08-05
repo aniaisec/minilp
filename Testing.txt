@@ -482,9 +482,16 @@ npm run build       # tsc -b (strict, noUnusedLocals) + vite build — must pass
 # H1) "Other…" now works by mouse: click it -> a text box appears; type a label,
 #     then click Submit. The submitted raw value is "other:<your text>".
 # H2) Submit is explicit: pick a category — it does NOT auto-submit. Change it if
-#     you like, then click "Submit ⏎" (top bar or below the inputs), or press Enter.
-# H3) Auto-submit is opt-in: tick the "Auto-submit" checkbox in the top bar; now a
-#     single-choice pick submits immediately. The choice persists across reloads.
+#     you like, then click "Submit" at the end of the input rail, or press Enter.
+#     The footer is sticky: scroll a tall task and Submit stays on screen.
+# H3) Auto-submit is opt-in: tick the "Auto-submit" checkbox in the rail footer,
+#     beside Submit; now a single-choice pick submits immediately. The choice
+#     persists across reloads.
+# H4) Mode identity: the accent is teal here and blue on the admin surface, the
+#     chip beside the project name reads "Labeling", and the tab title is
+#     "<project> · Labeling · MiniLP". Press ? for the shortcuts dialog — it
+#     traps focus, Esc closes it and returns focus to the ? button, and while it
+#     is open no hotkey (including x, which quits) fires behind it.
 
 # --- Template gallery (http://localhost:5173/#/admin/templates?key=dev-admin-key) ---
 # I1) Pick a template on the left -> a LIVE, interactive preview renders on the

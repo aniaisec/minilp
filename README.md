@@ -147,9 +147,20 @@ http://localhost:5173/?project=<id>&annotator=<id>&key=<api-key>
 
 Every task is completable from the keyboard alone — number/letter/arrow keys judge,
 `Enter` submits, `s` skips, `g` toggles guidelines, `d` toggles dark mode, `u` undoes
-the last selection, and `?` opens the shortcut overlay. Key badges are drawn on every
+the last selection, and `?` opens the shortcuts dialog. Key badges are drawn on every
 option. Selecting an answer doesn't submit by itself; an opt-in **Auto-submit** toggle
 (off by default) restores one-keystroke submission for single-choice templates.
+
+The surface identifies itself. Labeling and reviewing are **teal**, administering is
+blue, and the mode is also named in words by the chip beside the project name and by
+the document title (`Image QA · Labeling · MiniLP`) — colour is reinforcement, not the
+signal. A slim task bar carries the exit control, the project name, segmented session
+progress and the session totals (a polite live region, so the count is announced as it
+changes); the controls that act on the current unit — Submit, Skip, Auto-submit — sit
+in a sticky footer at the end of the input rail, so submitting never requires scrolling
+a tall task. Guidelines are a collapsible `<aside>`, the shortcuts dialog traps and
+restores focus, and the between-tasks state is an announced skeleton rather than a
+silent swap.
 
 ### Quality subsystem (M4)
 

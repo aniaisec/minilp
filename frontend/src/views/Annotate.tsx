@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { ApiError, type TaskClient } from "../api/client";
 import type { DisplayBlock, InputField, Task, TemplateSchema } from "../api/types";
 import { ExitToHome } from "../components/ExitToHome";
 import { GuidelinesPanel } from "../components/GuidelinesPanel";
 import { HotkeyOverlay } from "../components/HotkeyOverlay";
+import { IconHelp, IconMoon, IconSun } from "../components/icons";
+import { SessionProgress } from "../components/SessionProgress";
 import { SessionStats, type SessionState } from "../components/SessionStats";
+import { TaskSkeleton } from "../components/TaskSkeleton";
 import { assignHotkeys } from "../hotkeys/assign";
 import { eventToken, isTypingTarget } from "../hotkeys/event";
 import { canonicalize } from "../render/canonical";
@@ -26,6 +29,13 @@ export interface AnnotateProps {
   annotatorId: number;
   projectId: number;
   schema: TemplateSchema;
+  /**
+   * Names the screen (§ UX plan, phase 4): it is the `<h1>` in the task bar and
+   * the first segment of the document title. Falls back to the template's name,
+   * which is at least a description of the work — never to "Project #3", which
+   * is a description of the database.
+   */
+  projectName?: string;
   guidelines?: string;
   /**
    * Labels to aim for this session; drives the progress bar (§11). True
@@ -47,6 +57,21 @@ export interface AnnotateProps {
    * reached from home and has nowhere of its own to go back to.
    */
   homeHref?: string;
+  /**
+   * True when this view is mounted *inside* another page — the live previews in
+   * the template gallery and the visual builder both do it.
+   *
+   * A page can only have one of several things this view owns: one `<h1>`, one
+   * element with `id="main"`, one skip link, one top-edge mode bar. Rendered
+   * embedded, all four would be duplicates sitting inside the admin surface's
+   * own `<main>`, which is a worse document than the one that existed before
+   * this phase. So the chrome that only makes sense for a whole page is dropped
+   * and the task bar renders as preview furniture.
+   *
+   * `data-mode="label"` is deliberately *kept*: a preview of the labeling
+   * surface should look like the labeling surface, teal accent and all.
+   */
+  embedded?: boolean;
 }
 
 const AUTO_SUBMIT_KEY = "mlp.autoSubmit";
@@ -67,10 +92,12 @@ export function Annotate({
   annotatorId,
   projectId,
   schema,
+  projectName,
   guidelines = "",
   sessionGoal = 25,
   initialAutoSubmit = false,
   homeHref,
+  embedded = false,
 }: AnnotateProps) {
   const [task, setTask] = useState<Task | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
@@ -98,7 +125,9 @@ export function Annotate({
   // Time on the current task, reported so the backend can raise a speed flag
   // (§6.2). Reset every time a task is rendered, not when the answer changes.
   const taskShownAt = useRef<number>(Date.now());
+  const mainRef = useRef<HTMLElement | null>(null);
 
+  const title = projectName || schema.name;
   const assignment = useMemo(() => assignHotkeys(schema.inputs), [schema]);
   const positionalVariant = useMemo(
     () => variantString(schema, task?.variant),
@@ -154,6 +183,17 @@ export function Annotate({
       else root.setAttribute("data-theme", previous);
     };
   }, [theme]);
+
+  // Announce the surface through the document title (§ UX plan, mode identity),
+  // so a screen-reader user knows they are labeling and not administering
+  // without exploring the page to work it out. Same shape as the admin shell.
+  //
+  // Not when embedded: a preview inside the template gallery would rename the
+  // admin's tab to the template it happens to be previewing.
+  useEffect(() => {
+    if (embedded) return;
+    document.title = `${title} · Labeling · MiniLP`;
+  }, [title, embedded]);
 
   const doSubmit = useCallback(
     async (raw: Answers) => {
@@ -257,6 +297,20 @@ export function Annotate({
         }
         return;
       }
+
+      // While the dialog is open, only the key that closes it does anything.
+      // A hotkey that fires behind a modal answers a question the person cannot
+      // see, and the dialog's own focus trap cannot stop a window-level
+      // listener — it has to decline (§ UX plan, "hotkeys do not fight
+      // assistive technology").
+      if (overlayOpen) {
+        if (token === "?") {
+          e.preventDefault();
+          setOverlayOpen(false);
+        }
+        return;
+      }
+
       if (token === "enter") {
         const inTextarea =
           e.target instanceof HTMLElement && e.target.tagName.toLowerCase() === "textarea";
@@ -327,93 +381,123 @@ export function Annotate({
   const layout = schema.layout ?? { arrangement: "stack" };
   const maxWidth = WIDTHS[layout.width ?? "lg"] ?? WIDTHS.lg;
 
+  // Landmarks and the page heading belong to a page. Embedded in the admin
+  // surface's own `<main>`, they would be duplicates of things that already
+  // exist there, so the same markup renders as plain elements instead.
+  const Bar = embedded ? "div" : "header";
+  const Title = embedded ? "p" : "h1";
+  const Body = embedded ? "div" : "main";
+
   return (
-    <div className="mlp-app" data-theme={theme} data-testid="annotate-root">
-      <div className="mlp-annotate" style={{ maxWidth }}>
-        <div className="mlp-topbar">
-          <div className="mlp-topbar-left">
-            {homeHref ? (
-              <ExitToHome
-                href={homeHref}
-                // Leaving releases the held lease through the same `skip` path
-                // the `s` key uses, so the slot reopens now — variant retained
-                // (§2.7) — instead of sitting leased until it expires.
-                onLeave={async () => {
-                  if (task) await client.skip(task.slot_id, annotatorId);
-                }}
-                dirty={Object.keys(answers).length > 0 && !!task}
-              />
-            ) : null}
-            <SessionStats session={session} reputation={reputation} />
-          </div>
-          <div className="mlp-actions">
-            <label
-              className="mlp-autosubmit"
-              title="Submit as soon as a single-choice answer is picked"
-              data-testid="toggle-autosubmit"
-            >
-              <input
-                type="checkbox"
-                checked={autoSubmit}
-                onChange={toggleAutoSubmit}
-              />
-              Auto-submit
-            </label>
-            <button
-              type="button"
-              className="mlp-btn"
-              onClick={() => setOverlayOpen((o) => !o)}
-              data-testid="btn-help"
-              aria-label="Keyboard shortcuts"
-            >
-              ?
-            </button>
-            <button
-              type="button"
-              className="mlp-btn"
-              onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-              data-testid="btn-theme"
-            >
-              {theme === "light" ? "Dark" : "Light"}
-            </button>
-            <button
-              type="button"
-              className="mlp-btn"
-              onClick={() => void doSkip()}
-              disabled={!task}
-              data-testid="btn-skip"
-            >
-              Skip (s)
-            </button>
-            <button
-              type="button"
-              className="mlp-btn mlp-btn-primary"
-              onClick={() => void doSubmit(answers)}
-              disabled={!task || !complete}
-              data-testid="btn-submit"
-            >
-              Submit ⏎
-            </button>
-          </div>
-        </div>
+    <div
+      className="mlp-app mlp-label-shell"
+      data-theme={theme}
+      // Teal, not blue. The accent triple is re-pointed by one attribute (see
+      // the mode block in theme.css); `data-theme` stays independent so the two
+      // compose. Admin actions change configuration, labeling produces data —
+      // a person should never be unsure which of those they are doing.
+      data-mode="label"
+      data-embedded={embedded ? "true" : undefined}
+      data-testid="annotate-root"
+    >
+      {/* Peripheral-vision mode marker. Decorative — the chip in the task bar is
+          what actually names the mode, because blue against teal is a plausible
+          confusion under deuteranopia. */}
+      {!embedded && <div className="mlp-mode-bar" aria-hidden="true" />}
 
-
-        <div
-          className="mlp-progress"
-          data-testid="session-progress"
-          role="progressbar"
-          aria-label="Session progress"
-          aria-valuemin={0}
-          aria-valuemax={sessionGoal}
-          aria-valuenow={Math.min(session.submitted, sessionGoal)}
+      {/* First tab stop. `preventDefault` because the labeler surface routes on
+          the query string: letting "#main" land in the address bar would look
+          like a route change to the admin shell's hash listener. */}
+      {!embedded && (
+        <a
+          className="mlp-skip-link mlp-visually-hidden-focusable"
+          href="#main"
+          data-testid="skip-link"
+          onClick={(e) => {
+            e.preventDefault();
+            const main = mainRef.current;
+            if (main) {
+              main.focus();
+              // Optional-called: jsdom has no layout, so no `scrollIntoView`,
+              // and focus is the part that has to work anyway.
+              main.scrollIntoView?.();
+            }
+          }}
         >
-          <span
-            style={{
-              width: `${Math.min(100, sessionGoal > 0 ? (session.submitted / sessionGoal) * 100 : 0)}%`,
-            }}
-          />
+          Skip to content
+        </a>
+      )}
+
+      {/* The task bar. Everything here is either "where am I" or "how is the
+          session going"; the controls that act on *this unit* live at the end
+          of the input rail, where the answer is. Mixing the two in one flex row
+          is what made the old topbar unreadable at a glance. */}
+      <Bar className="mlp-taskbar" data-testid="taskbar">
+        <div className="mlp-taskbar-id">
+          {homeHref ? (
+            <ExitToHome
+              href={homeHref}
+              // Leaving releases the held lease through the same `skip` path
+              // the `s` key uses, so the slot reopens now — variant retained
+              // (§2.7) — instead of sitting leased until it expires.
+              onLeave={async () => {
+                if (task) await client.skip(task.slot_id, annotatorId);
+              }}
+              dirty={Object.keys(answers).length > 0 && !!task}
+              // `x` must not fire behind the shortcuts dialog: quitting the task
+              // is the one action here you cannot undo.
+              hotkey={!overlayOpen}
+            />
+          ) : null}
+          <Title className="mlp-taskbar-title" title={title}>
+            {title}
+          </Title>
+          <span className="mlp-mode-chip" data-testid="mode-chip">
+            Labeling
+          </span>
         </div>
 
+        <SessionProgress done={session.submitted} goal={sessionGoal} />
+
+        <div className="mlp-taskbar-tools">
+          <SessionStats session={session} reputation={reputation} />
+          <button
+            type="button"
+            className="mlp-icon-btn"
+            onClick={() => setOverlayOpen((o) => !o)}
+            aria-expanded={overlayOpen}
+            data-testid="btn-help"
+          >
+            <IconHelp />
+            <span className="mlp-visually-hidden">Keyboard shortcuts</span>
+          </button>
+          <button
+            type="button"
+            className="mlp-icon-btn"
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            data-testid="theme-toggle"
+          >
+            {theme === "light" ? <IconMoon /> : <IconSun />}
+            <span className="mlp-visually-hidden">
+              Switch to {theme === "light" ? "dark" : "light"} theme
+            </span>
+          </button>
+        </div>
+      </Bar>
+
+      <Body
+        className="mlp-annotate"
+        id={embedded ? undefined : "main"}
+        // A callback ref, not the ref object: `Body` is `"main" | "div"`, and a
+        // ref object has to pick one element type where a callback does not.
+        ref={(el: HTMLElement | null) => {
+          mainRef.current = el;
+        }}
+        // -1 so the skip link can move focus here without making <main> a tab
+        // stop of its own.
+        tabIndex={embedded ? undefined : -1}
+        style={{ maxWidth }}
+      >
         <GuidelinesPanel
           markdown={guidelines}
           open={guidelinesOpen}
@@ -421,22 +505,21 @@ export function Annotate({
         />
 
         {error ? (
-          <div className="mlp-card" style={{ borderColor: "var(--danger)" }} data-testid="error">
+          <div
+            className="mlp-card mlp-card-danger"
+            data-testid="error"
+            // Assertive: a submit that failed has to interrupt, because the
+            // next thing the labeler does otherwise is answer the same unit again.
+            role="alert"
+          >
             {error}
           </div>
         ) : null}
 
         {loading ? (
-          <div className="mlp-card" data-testid="loading">
-            Loading…
-          </div>
+          <TaskSkeleton split={layout.arrangement === "split"} />
         ) : paused ? (
-          <div
-            className="mlp-card"
-            style={{ borderColor: "var(--danger)" }}
-            data-testid="paused"
-            role="status"
-          >
+          <div className="mlp-card mlp-card-danger" data-testid="paused" role="status">
             <strong>Paused — no tasks available.</strong>
             <p className="mlp-muted" data-testid="paused-reason">
               {paused}
@@ -444,7 +527,7 @@ export function Annotate({
             <p className="mlp-muted">Contact a project admin to have your access restored.</p>
           </div>
         ) : done ? (
-          <div className="mlp-card" data-testid="empty-queue">
+          <div className="mlp-card" data-testid="empty-queue" role="status">
             All caught up — no tasks in the queue.
           </div>
         ) : task ? (
@@ -457,9 +540,11 @@ export function Annotate({
             canSubmit={complete}
             onSubmit={() => void doSubmit(answers)}
             onSkip={() => void doSkip()}
+            autoSubmit={autoSubmit}
+            onToggleAutoSubmit={toggleAutoSubmit}
           />
         ) : null}
-      </div>
+      </Body>
 
       {overlayOpen ? (
         <HotkeyOverlay schema={schema} assignment={assignment} onClose={() => setOverlayOpen(false)} />
@@ -477,6 +562,8 @@ function TaskBody({
   canSubmit,
   onSubmit,
   onSkip,
+  autoSubmit,
+  onToggleAutoSubmit,
 }: {
   schema: TemplateSchema;
   task: Task;
@@ -486,6 +573,8 @@ function TaskBody({
   canSubmit: boolean;
   onSubmit: () => void;
   onSkip: () => void;
+  autoSubmit: boolean;
+  onToggleAutoSubmit: () => void;
 }) {
   const layout = schema.layout ?? { arrangement: "stack" };
   const variant = variantString(schema, task.variant);
@@ -499,6 +588,10 @@ function TaskBody({
     </div>
   );
 
+  // The submit affordance sticks to the bottom of the rail rather than sitting
+  // at the natural end of the form. On an image-heavy task the form is taller
+  // than the window, and "scroll down to submit" is a scroll on every single
+  // unit — which, at a few hundred units a day, is the whole cost of the view.
   const inputRail = (
     <div className="mlp-input-rail" data-testid="input-rail">
       {schema.inputs.map((input) => (
@@ -510,34 +603,50 @@ function TaskBody({
           assignment={assignment}
         />
       ))}
-      <div className="mlp-rail-actions">
-        <button
-          type="button"
-          className="mlp-btn"
-          onClick={onSkip}
-          data-testid="btn-skip-rail"
+      <div className="mlp-rail-footer" data-testid="rail-footer">
+        <label
+          className="mlp-autosubmit"
+          title="Submit as soon as a single-choice answer is picked"
+          data-testid="toggle-autosubmit"
         >
-          Skip (s)
-        </button>
-        <button
-          type="button"
-          className="mlp-btn mlp-btn-primary"
-          onClick={onSubmit}
-          disabled={!canSubmit}
-          data-testid="btn-submit-rail"
-        >
-          Submit ⏎
-        </button>
+          <input type="checkbox" checked={autoSubmit} onChange={onToggleAutoSubmit} />
+          Auto-submit
+        </label>
+        <div className="mlp-rail-footer-actions">
+          <button type="button" className="mlp-btn" onClick={onSkip} data-testid="btn-skip">
+            Skip
+            <kbd className="mlp-badge" data-hotkey="s">
+              S
+            </kbd>
+          </button>
+          <button
+            type="button"
+            className="mlp-btn mlp-btn-primary"
+            onClick={onSubmit}
+            disabled={!canSubmit}
+            data-testid="btn-submit"
+          >
+            Submit
+            <kbd className="mlp-badge" data-hotkey="enter">
+              ⏎
+            </kbd>
+          </button>
+        </div>
       </div>
     </div>
   );
 
+  // The template's ratio arrives as a custom property rather than as an inline
+  // `grid-template-columns`. An inline declaration beats every stylesheet rule
+  // including media queries, so the narrow-window rule that folds these grids
+  // into one column could never fire — the ratio has to be data the stylesheet
+  // reads, not a declaration that overrides it.
   if (layout.arrangement === "split") {
     const ratio = layout.ratio ?? [1, 1];
     return (
       <div
         className="mlp-layout-split"
-        style={{ gridTemplateColumns: `${ratio[0]}fr ${ratio[1]}fr` }}
+        style={{ "--grid-ratio": `${ratio[0]}fr ${ratio[1]}fr` } as CSSProperties}
       >
         {displayRegion}
         {inputRail}
@@ -551,7 +660,7 @@ function TaskBody({
       <div className="mlp-layout-stack">
         <div
           className="mlp-layout-columns"
-          style={{ gridTemplateColumns: ratio.map((r) => `${r}fr`).join(" ") }}
+          style={{ "--grid-ratio": ratio.map((r) => `${r}fr`).join(" ") } as CSSProperties}
         >
           {display.map((block, i) => (
             <DisplayBlockView key={i} block={block} payload={task.payload} variant={variant} />

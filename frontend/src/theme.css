@@ -362,6 +362,11 @@ input.mlp-text {
 .mlp-layout-split,
 .mlp-layout-columns {
   display: grid;
+  /* The template supplies its ratio as `--grid-ratio` (see Annotate.tsx). It is
+     a custom property rather than an inline `grid-template-columns` because an
+     inline declaration outranks every stylesheet rule, media queries included,
+     and the narrow-window fold below has to be able to win. */
+  grid-template-columns: var(--grid-ratio, minmax(0, 1fr));
   gap: var(--gap);
   align-items: start;
 }
@@ -409,13 +414,8 @@ pre.mlp-code {
   color: var(--text-muted);
 }
 
-/* ---- guidelines panel (§11) ---- */
-.mlp-guidelines {
-  border-left: 3px solid var(--accent);
-}
-.mlp-guidelines-body {
-  white-space: pre-wrap;
-}
+/* Guidelines drawer styles live with the rest of the labeler surface, at the
+   end of this file (UX plan, phase 4). */
 
 /* ---- top bar + session stats ---- */
 .mlp-topbar {
@@ -436,12 +436,27 @@ pre.mlp-code {
   gap: 8px;
 }
 .mlp-btn {
+  /* inline-flex so a button can carry its own key badge beside the label
+     without the badge dropping onto the text baseline. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: 8px 14px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
+}
+/* On a filled button the badge has to sit on the accent, not on the page. */
+.mlp-btn-primary .mlp-badge {
+  border-color: color-mix(in srgb, var(--accent-contrast) 45%, transparent);
+  background: transparent;
+  color: var(--accent-contrast);
+}
+.mlp-btn:disabled .mlp-badge {
+  border-color: var(--disabled-border);
+  color: var(--disabled-text);
 }
 .mlp-btn-primary {
   /* `--accent-strong`, not `--accent`: this is the one place the accent has to
@@ -997,6 +1012,14 @@ input.mlp-number {
   background: var(--accent-soft);
 }
 .mlp-chip-x {
+  /* 24px square: WCAG 2.2 target size (minimum). A chip's remove affordance
+     used to be a bare glyph roughly 10px across, which is a coin toss on a
+     touchscreen and a miss for anyone with a tremor. */
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  margin: -4px -6px -4px 0;
   border: none;
   background: none;
   color: inherit;
@@ -1044,8 +1067,14 @@ input.mlp-number {
   display: flex;
   gap: 4px;
 }
+/* 24px minimum in both directions (WCAG 2.2 target size). "Tiny" is about the
+   type and the padding, not about the area you have to hit. */
 .mlp-btn-tiny {
-  padding: 2px 8px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 2px 6px;
   font-size: 12px;
 }
 
@@ -2018,5 +2047,358 @@ input.mlp-number {
   .mlp-project-actions {
     margin-left: 0;
     width: 100%;
+  }
+}
+
+/* =========================================================================
+   Labeler surface (UX plan, phase 4)
+   =========================================================================
+
+   Teal instead of blue is one attribute on the shell root and is handled in
+   the token layer; everything below is the other half of the phase — the two
+   things that actually hurt during a labeling session.
+
+   One: the topbar mixed navigation, session stats and the controls that act on
+   the current unit into a single flex row, so nothing had priority and the
+   Submit button sat next to the Home button. Chrome is now chrome (the task
+   bar) and the controls that act on the answer live with the answer.
+
+   Two: the submit affordance was at the natural end of the form, which on an
+   image task means below the fold. It is a sticky footer on the input rail.
+   ========================================================================= */
+
+.mlp-label-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-top: var(--mode-bar-h);
+}
+
+/* Embedded in a preview pane (template gallery, visual builder): it is a
+   component on someone else's page, so it claims neither the viewport height
+   nor a sticky position of its own. */
+.mlp-label-shell[data-embedded="true"] {
+  min-height: 0;
+  padding-top: 0;
+}
+.mlp-label-shell[data-embedded="true"] .mlp-taskbar {
+  position: static;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.mlp-label-shell[data-embedded="true"] .mlp-taskbar-title {
+  margin: 0;
+  font-size: 15px;
+}
+.mlp-label-shell[data-embedded="true"] .mlp-rail-footer {
+  position: static;
+}
+
+/* For surfaces that carry a mode bar without being a grid shell (the review
+   queue), so the 3px marker does not sit on top of the first row. */
+.mlp-mode-inset {
+  padding-top: var(--mode-bar-h);
+}
+
+/* ---- task bar ----------------------------------------------------------- */
+
+.mlp-taskbar {
+  position: sticky;
+  top: var(--mode-bar-h);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+.mlp-taskbar-id {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+/* An `<h1>` that is 17px on purpose. Its job is to say which project you are
+   labeling, not to be the loudest thing on screen — the unit is. */
+.mlp-taskbar-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mlp-taskbar-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+/* ---- segmented session progress ----------------------------------------- */
+
+.mlp-seg-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.mlp-seg-track {
+  display: flex;
+  gap: 3px;
+}
+.mlp-seg {
+  width: 10px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  transition: background var(--motion-fast) var(--ease);
+}
+.mlp-seg-on {
+  background: var(--accent);
+}
+.mlp-seg-readout {
+  color: var(--text-muted);
+  font-size: 12px;
+  /* Tabular figures so the readout does not shuffle sideways as it counts. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- main --------------------------------------------------------------- */
+
+.mlp-annotate:focus {
+  /* Focused only by the skip link, never by tabbing — a ring here would be
+     confusing rather than helpful, and the heading is what gets announced. */
+  outline: none;
+}
+
+.mlp-card-danger {
+  border-color: var(--danger);
+}
+
+/* ---- guidelines drawer -------------------------------------------------- */
+
+.mlp-guidelines {
+  margin-bottom: var(--gap);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.mlp-guidelines-head {
+  margin: 0;
+  font-size: 14px;
+}
+.mlp-guidelines-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.mlp-guidelines-toggle:hover {
+  background: var(--surface-2);
+}
+.mlp-guidelines-label {
+  margin-right: auto;
+}
+.mlp-guidelines-caret {
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-muted);
+  transition: transform var(--motion-fast) var(--ease);
+}
+.mlp-guidelines[data-open="true"] .mlp-guidelines-caret {
+  transform: rotate(90deg);
+}
+.mlp-guidelines-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent-strong);
+}
+.mlp-guidelines-body {
+  padding: 0 var(--space-4) var(--space-3) var(--space-4);
+  white-space: pre-wrap;
+}
+
+/* ---- skeleton loaders --------------------------------------------------- */
+
+.mlp-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+.mlp-skeleton-split {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: var(--gap);
+  align-items: start;
+}
+.mlp-skel-display {
+  display: flex;
+  flex-direction: column;
+}
+.mlp-skel-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mlp-skel-block {
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  background-image: linear-gradient(
+    90deg,
+    var(--surface-2),
+    var(--surface-3),
+    var(--surface-2)
+  );
+  background-size: 200% 100%;
+  /* Covered by the global prefers-reduced-motion block, which drops it to a
+     flat tint rather than a pulse. */
+  animation: mlp-shimmer 1.4s linear infinite;
+}
+.mlp-skel-media {
+  height: 280px;
+}
+.mlp-skel-line {
+  height: 12px;
+  width: 45%;
+}
+.mlp-skel-line-lg {
+  height: 18px;
+  width: 65%;
+}
+.mlp-skel-row {
+  height: 42px;
+}
+@keyframes mlp-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---- sticky rail footer -------------------------------------------------- */
+
+.mlp-rail-footer {
+  position: sticky;
+  /* Zero, not a gap: at 200% zoom the footer is a large share of the viewport,
+     and a floating bar leaves a strip of scrolling content under it that reads
+     as a rendering fault. */
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Wraps rather than shrinks, so at 320px the toggle sits above the buttons
+     instead of squeezing them below the 24px target size (WCAG reflow). */
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+  /* Opaque: content scrolls underneath it. */
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.mlp-rail-footer-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* ---- field validation ---------------------------------------------------- */
+
+.mlp-invalid {
+  border-color: var(--danger);
+}
+.mlp-field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* ---- hotkey dialog ------------------------------------------------------- */
+
+.mlp-overlay-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+}
+.mlp-overlay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.mlp-overlay-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.mlp-overlay-group {
+  margin-bottom: var(--space-4);
+}
+.mlp-overlay-group h3 {
+  margin: 0 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mlp-overlay-group .mlp-overlay-row:last-child {
+  border-bottom: none;
+}
+.mlp-overlay-foot {
+  margin-bottom: 0;
+}
+
+/* ---- reflow -------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .mlp-taskbar {
+    flex-wrap: wrap;
+    padding-inline: var(--space-3);
+  }
+  /* The progress indicator is the first thing to give up its row: it is a
+     summary of work already done, and the identity and the tools are both
+     things you act on. */
+  .mlp-seg-progress {
+    order: 3;
+    width: 100%;
+  }
+  /* One column. Two panels of an image task side by side stop being readable
+     well before the window stops being wide, and the input rail is the thing
+     that must not shrink. */
+  .mlp-layout-split,
+  .mlp-layout-columns,
+  .mlp-skeleton-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .mlp-annotate {
+    padding: var(--space-3);
+  }
+  .mlp-taskbar-tools {
+    gap: var(--space-2);
+  }
+  .mlp-stats {
+    gap: var(--space-3);
+    font-size: 12px;
   }
 }
