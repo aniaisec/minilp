@@ -188,6 +188,30 @@ export function IconBook(p: IconProps) {
   );
 }
 
+/* The command palette (phase 6). `IconSearch` names the trigger; `IconEnter`
+   marks the row Enter would run, drawn rather than set as text so it takes the
+   row's colour and optical weight from `currentColor` like every other icon
+   here — the "↵" character in the footer hint is styled type, and the two are
+   deliberately different things. */
+
+export function IconSearch(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m15.5 15.5 4.5 4.5" />
+    </Icon>
+  );
+}
+
+export function IconEnter(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M20 5v6a3 3 0 0 1-3 3H5" />
+      <path d="m9 10-4 4 4 4" />
+    </Icon>
+  );
+}
+
 /* The empty and error states (phase 5) use these two. */
 
 export function IconInbox(p: IconProps) {

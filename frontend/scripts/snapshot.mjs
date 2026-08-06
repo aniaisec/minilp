@@ -106,6 +106,44 @@ const SCENARIOS = [
   },
   { name: "dashboard-empty", hash: "#/admin", theme: "light", width: 1440, fixtures: "empty" },
   { name: "roster-error", hash: "#/admin/project/1/roster", theme: "light", width: 1440 },
+
+  // --- phase 6: the command palette ---------------------------------------
+  //
+  // Opened through its own trigger rather than by synthesising Cmd+K, because
+  // the trigger is a control the "before" tree does not have — so these frames
+  // are also the comparison for the command bar itself.
+  {
+    name: "palette-light",
+    hash: "#/admin",
+    theme: "light",
+    width: 1440,
+    clicks: ["palette-open"],
+  },
+  {
+    name: "palette-dark",
+    hash: "#/admin",
+    theme: "dark",
+    width: 1440,
+    clicks: ["palette-open"],
+  },
+  // Inside a project and mid-query: the state that shows the ranking, the group
+  // headings, and the nine section jumps that only exist in this context.
+  {
+    name: "palette-filtered",
+    hash: "#/admin/project/1/units",
+    theme: "light",
+    width: 1440,
+    clicks: ["palette-open"],
+    type: { testid: "palette-input", text: "ex" },
+  },
+  // 560px: the trigger collapses to its icon and the palette fills the width.
+  {
+    name: "palette-narrow",
+    hash: "#/admin",
+    theme: "light",
+    width: 560,
+    clicks: ["palette-open"],
+  },
 ];
 
 const result = await viteBuild({
@@ -191,6 +229,10 @@ const PAIRS = [
   ["Empty state — no judges enrolled", "judges-empty", 1440],
   ["Empty state — no projects", "dashboard-empty", 1440],
   ["Error state — the roster fetch failed", "roster-error", 1440],
+  ["Command palette — light", "palette-light", 1440],
+  ["Command palette — dark", "palette-dark", 1440],
+  ["Command palette — filtered, inside a project", "palette-filtered", 1440],
+  ["Command palette — 560px, trigger collapsed to its icon", "palette-narrow", 560],
 ];
 
 const section = ([heading, name, width]) => `
@@ -238,8 +280,9 @@ writeFileSync(
     <h1>MiniLP — before / after</h1>
     <p class="sub">
       UX modernization plan, phases 1 (token layer), 2 (admin shell), 3 (project view),
-      4 (labeler surface) and 5 (component polish). Each frame is the real application
-      rendered against fixture data, at a 1440×900 viewport unless noted.
+      4 (labeler surface), 5 (component polish) and 6 (command palette). Each frame is
+      the real application rendered against fixture data, at a 1440×900 viewport unless
+      noted.
       Regenerate with <code>node frontend/scripts/snapshot.mjs after</code>.
     </p>${PAIRS.map(section).join("")}
   </body>

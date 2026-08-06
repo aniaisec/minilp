@@ -37,6 +37,10 @@ declare global {
        *  reach a state that is otherwise only reachable by interaction (a filled
        *  answer, an open dialog). */
       clicks?: string[];
+      /** Text typed into a field after the clicks have landed. The command
+       *  palette's interesting state is a *filtered* one, and there is no way
+       *  to reach it by clicking. */
+      type?: { testid: string; text: string };
     };
   }
 }
@@ -149,12 +153,31 @@ if (snap.theme === "dark") {
 // looks for its target. Missing targets are skipped rather than thrown: a
 // scenario that names a control the *before* tree does not have should still
 // produce a frame, because "this did not exist yet" is the comparison.
-(snap.clicks ?? []).forEach((testid, i) => {
+const clicks = snap.clicks ?? [];
+clicks.forEach((testid, i) => {
   setTimeout(
     () => document.querySelector<HTMLElement>(`[data-testid="${testid}"]`)?.click(),
     120 + i * 40,
   );
 });
+
+// Typing, for the states a click cannot reach. Assigning `.value` directly is
+// not enough on a React-controlled input: React's own value tracker sees no
+// change and swallows the event, leaving the field visually filled and the
+// component's state empty. Going through the prototype's setter defeats the
+// tracker, which is the standard workaround.
+if (snap.type) {
+  const { testid, text } = snap.type;
+  setTimeout(
+    () => {
+      const el = document.querySelector<HTMLInputElement>(`[data-testid="${testid}"]`);
+      if (!el) return; // the field may not exist on the "before" tree
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(el, text);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    180 + clicks.length * 40,
+  );
+}
 
 // Tells the screenshot driver the async fixture loads have settled.
 setTimeout(() => document.documentElement.setAttribute("data-snapshot-ready", "1"), 600);

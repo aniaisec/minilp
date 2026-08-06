@@ -2141,6 +2141,194 @@ input.mlp-number {
   text-decoration: underline;
 }
 
+/* ---- command palette (phase 6) ------------------------------------------- */
+
+/* The trigger. Shaped like a search field rather than an icon button, because
+   that shape is what tells a first-time admin there is something to type into
+   — the keycap alone is a hint you have to already know how to read. */
+.mlp-cmdk {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* 32px, the same as the icon buttons it sits beside, and comfortably over the
+     24px WCAG 2.2 minimum target. */
+  height: 32px;
+  min-width: 0;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease);
+}
+.mlp-cmdk:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text);
+}
+.mlp-cmdk[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.mlp-cmdk-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mlp-cmdk-key {
+  flex: none;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Top-anchored, not centred: the results grow downward, and a box that starts
+   in the middle of the window walks its first result off the bottom edge. */
+.mlp-palette-scrim {
+  align-items: flex-start;
+  padding: 10vh var(--space-4) var(--space-4);
+}
+.mlp-palette {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 620px;
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-3);
+}
+
+.mlp-palette-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.mlp-palette-field-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+.mlp-palette-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+.mlp-palette-input:focus {
+  /* The field is the whole dialog's focus point and it is the only thing in
+     here that can take focus, so a ring around it says nothing the open dialog
+     has not already said. The row highlight is what tracks the keyboard. */
+  outline: none;
+}
+.mlp-palette-input::placeholder {
+  color: var(--text-muted);
+}
+
+.mlp-palette-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+.mlp-palette-group + .mlp-palette-group {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+.mlp-palette-group-head {
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mlp-palette-option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+/* Selection is drawn from `aria-selected`, not from a class. One source of
+   truth means the highlight cannot disagree with what the combobox is telling
+   a screen reader, which is the classic way this widget goes wrong. */
+.mlp-palette-option[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.mlp-palette-option[aria-selected="true"] .mlp-palette-option-hint {
+  color: var(--accent-strong);
+}
+.mlp-palette-option-label {
+  flex: none;
+  font-size: 14px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mlp-palette-option-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mlp-palette-option-enter {
+  flex: none;
+  align-self: center;
+  color: var(--accent-strong);
+}
+
+.mlp-palette-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.mlp-palette-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mlp-palette-foot-sep {
+  margin: 0 var(--space-2);
+  color: var(--border-strong);
+}
+
 @media (max-width: 640px) {
   .mlp-shell,
   .mlp-shell[data-collapsed="true"] {
@@ -2151,6 +2339,45 @@ input.mlp-number {
   }
   .mlp-admin-main {
     padding: var(--space-3);
+  }
+
+  /* No room for the prompt or the keycap beside the breadcrumb. The label is
+     clipped rather than `display: none`d — hiding it would take it out of the
+     accessibility tree too, leaving a button with no accessible name at exactly
+     the width where it is hardest to guess from context. */
+  .mlp-cmdk {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+  .mlp-cmdk-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .mlp-cmdk-key {
+    display: none;
+  }
+  .mlp-palette-scrim {
+    padding: var(--space-4) var(--space-2);
+  }
+  /* The row cannot hold label and hint side by side, so the hint wraps under
+     it rather than being dropped. Hiding it would take it out of the
+     accessible name too, and for the section jumps the hint is the only thing
+     naming which project they belong to. */
+  .mlp-palette-option {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .mlp-palette-option-hint {
+    text-align: left;
+  }
+  .mlp-palette-option-enter {
+    display: none;
   }
 }
 
