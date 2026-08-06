@@ -256,6 +256,18 @@ format for that template, prefilled from its sample; paste directly or choose a
 file. Required fields are verified (client-side warning, authoritative per-row
 check on the server), and every row's outcome comes back in the validation report.
 
+**Command palette.** `Cmd/Ctrl+K` anywhere on the admin surface opens a search
+over every destination, every project, every template, that project's nine
+sections, and the actions that otherwise take three clicks — new project, start
+labeling, export, switch theme. Matching is by label, by hint, by keyword and by
+initialism ("np" finds *New project*, "roster" finds *Annotators*), and every
+token has to match, so typing more always narrows. It is a real combobox: arrow
+keys move a selection the caret never follows, so typing keeps working; Enter
+runs; Escape closes and hands focus back to the trigger. The hotkey takes a
+modifier deliberately — it has to fire from inside the unit browser's filter box,
+which is exactly where the bare-letter rail hotkeys (`[`, `g p`/`g t`/`g m`)
+cannot.
+
 **Annotation UX.** Selecting an answer no longer submits on its own — you pick,
 adjust if needed, then click **Submit** (or press Enter). Auto-submit-on-select is
 an opt-in speed toggle that persists across sessions. The `allow_other` "Other…"

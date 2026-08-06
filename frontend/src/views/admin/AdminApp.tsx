@@ -19,10 +19,11 @@
 // pasted into the header field, so an admin can drive the whole surface with the
 // same key that seeds their curl calls.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { MiniLpClient } from "../../api/client";
 import { AdminShell, type Crumb, type NavKey } from "./AdminShell";
+import { buildCommands, usePaletteIndex } from "./commands";
 import { Dashboard } from "./Dashboard";
 import { MarketplacePanel } from "./MarketplacePanel";
 import { ProjectView } from "./ProjectView";
@@ -133,6 +134,27 @@ export function AdminApp() {
   const projectId = maybeId !== null && Number.isInteger(maybeId) ? maybeId : null;
   const projectName = useProjectName(client, projectId);
 
+  // The command palette (phase 6). Assembled here rather than in the shell for
+  // the same reason the title is: the shell owns chrome, and only the router
+  // knows which project you are in — which is what decides whether "Export
+  // labels" and the nine section jumps are on offer at all.
+  const [paletteUsed, setPaletteUsed] = useState(false);
+  const onPaletteOpen = useCallback(() => setPaletteUsed(true), []);
+  const paletteIndex = usePaletteIndex(client, paletteUsed);
+  const commands = useMemo(
+    () =>
+      buildCommands({
+        client,
+        apiKey,
+        theme,
+        onThemeChange: setTheme,
+        projectId,
+        projectName,
+        index: paletteIndex,
+      }),
+    [client, apiKey, theme, setTheme, projectId, projectName, paletteIndex],
+  );
+
   // One resolution step producing everything the shell needs: which rail item
   // is current, what the `<h1>` says, and how you got here. Previously the
   // route only produced a body, and the header had no idea where you were —
@@ -222,6 +244,8 @@ export function AdminApp() {
       title={title}
       crumbs={crumbs}
       currentCrumb={currentCrumb}
+      commands={commands}
+      onPaletteOpen={onPaletteOpen}
     >
       {!apiKey && (
         <div className="mlp-card mlp-muted" style={{ marginBottom: "var(--gap)" }}>

@@ -534,6 +534,25 @@ npm run build       # tsc -b (strict, noUnusedLocals) + vite build — must pass
 #        blocks Create otherwise), gold ratio, min reputation.
 #     On success it jumps to the new project's Progress tab. Label a couple of
 #     its units and reload to watch the funnel move.
+# F7) Command palette (UX plan phase 6). Press Cmd+K (Ctrl+K on Windows/Linux),
+#     or click "Search or jump to…" in the command bar:
+#     - It lists every destination, every project, every template and the common
+#       actions. Type to narrow; typing more only ever narrows further.
+#     - Type "np" -> "New project" (an initialism matches as a subsequence).
+#       Type "roster" -> "Annotators" (the slug finds it, not just the label).
+#     - Open a project first and the palette gains a "This project" group with
+#       all nine sections plus "Export labels"; outside a project neither is
+#       offered, because there is no answer to "units of what".
+#     - Keyboard only: Up/Down move (they wrap), Home/End jump, Enter runs,
+#       Esc closes and focus lands back on the trigger. The caret never leaves
+#       the text field — check that you can still type after arrowing down.
+#     - Press Cmd+K with the caret inside the unit browser's filter box: it
+#       still opens. That is why the palette hotkey has a modifier and the rail's
+#       ([ and g) do not.
+#     - While it is open, "g t" must NOT navigate behind it.
+#     - Screen reader: the field announces as a combobox with a result count,
+#       moving the selection announces the option and its group, and no matches
+#       announces "No commands match" rather than going silent.
 
 
 #M6 Testing — Authoring (visual builder + expanded palette), project editing,

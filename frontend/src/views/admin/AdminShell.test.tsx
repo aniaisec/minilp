@@ -9,13 +9,23 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Command } from "../../components/CommandPalette";
 import { AdminApp } from "./AdminApp";
 import { AdminShell, COLLAPSE_STORAGE } from "./AdminShell";
 
 const client = {
   myAnnotator: vi.fn().mockResolvedValue({ id: 9 }),
   listProjects: vi.fn().mockResolvedValue([]),
+  listTemplates: vi.fn().mockResolvedValue([]),
 } as never;
+
+const paletteRun = vi.fn();
+/** What the palette is filled with here is `commands.ts`'s business; the shell
+ *  only has to open it, close it, and hand focus back. */
+const PALETTE_COMMANDS: Command[] = [
+  { id: "go:projects", group: "Go to", label: "Projects", run: paletteRun },
+  { id: "go:templates", group: "Go to", label: "Templates", run: paletteRun },
+];
 
 /** jsdom has no `matchMedia`. Give it one that answers `max-width` honestly. */
 function mockViewport(width: number) {
@@ -44,6 +54,7 @@ function renderShell(over: Partial<Parameters<typeof AdminShell>[0]> = {}) {
     active: "projects" as const,
     title: "Projects",
     crumbs: [],
+    commands: PALETTE_COMMANDS,
     children: <p>body</p>,
     ...over,
   };
@@ -229,6 +240,132 @@ describe("hotkeys", () => {
     // Still where we started: a hotkey that navigates behind an open dialog
     // moves the page out from under it.
     expect(window.location.hash).toBe("#/admin");
+  });
+});
+
+// --- command palette --------------------------------------------------------
+//
+// The widget's own contract is tested in components/CommandPalette.test.tsx.
+// What belongs here is the wiring: the hotkey, the trigger, and the two things
+// an open dialog owes the rest of the shell — focus on the way out, and silence
+// from every other hotkey while it is up.
+
+describe("command palette", () => {
+  it("opens on Cmd+K and on Ctrl+K, and closes on the same key", async () => {
+    renderShell();
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    await screen.findByTestId("command-palette");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    await waitFor(() =>
+      expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument(),
+    );
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    await screen.findByTestId("command-palette");
+  });
+
+  it("opens while the caret is in a text field", async () => {
+    // The reason the palette hotkey is a modifier combination and the rail's
+    // are bare letters: this is exactly where `[` and `g` cannot fire.
+    renderShell();
+    const input = document.createElement("input");
+    input.type = "text";
+    document.body.appendChild(input);
+    input.focus();
+
+    fireEvent.keyDown(input, { key: "k", metaKey: true });
+
+    await screen.findByTestId("command-palette");
+    input.remove();
+  });
+
+  it("opens from the command bar and reports its state", async () => {
+    renderShell();
+    const trigger = screen.getByTestId("palette-open");
+
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // The visible text is the accessible name — a speech user saying "click
+    // search or jump to" has to hit the thing they can read (WCAG 2.5.3).
+    expect(trigger).toHaveAccessibleName(/Search or jump to/);
+
+    fireEvent.click(trigger);
+
+    await screen.findByTestId("command-palette");
+    expect(screen.getByTestId("palette-open")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("returns focus to the trigger even when opened from the keyboard", async () => {
+    renderShell();
+    // Nothing focused: without the shell focusing its own trigger first, the
+    // trap would have nothing to restore to and Escape would drop the admin at
+    // the top of the document.
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    await screen.findByTestId("command-palette");
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(screen.getByTestId("palette-open"));
+  });
+
+  it("closes rather than reopens when the trigger is pressed again", async () => {
+    // The scrim covers the trigger, so a real browser sends the press there and
+    // swallows the click. jsdom does not, which makes this the worst case: if
+    // the handler is a blind `open`, the palette shuts and immediately reopens.
+    renderShell();
+    fireEvent.click(screen.getByTestId("palette-open"));
+    await screen.findByTestId("command-palette");
+
+    fireEvent.click(screen.getByTestId("palette-open"));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("tells the caller it opened, so the project list can be fetched lazily", async () => {
+    const onPaletteOpen = vi.fn();
+    renderShell({ onPaletteOpen });
+
+    expect(onPaletteOpen).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("palette-open"));
+    await screen.findByTestId("command-palette");
+
+    expect(onPaletteOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("silences the rail hotkeys while it is open", async () => {
+    renderShell();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    await screen.findByTestId("command-palette");
+
+    // Typing "g" then "t" into the palette must search for "gt", not navigate
+    // the page out from under the dialog.
+    fireEvent.keyDown(window, { key: "g" });
+    fireEvent.keyDown(window, { key: "t" });
+    fireEvent.keyDown(window, { key: "[" });
+
+    expect(window.location.hash).toBe("#/admin");
+    expect(screen.getByTestId("admin-shell")).toHaveAttribute("data-collapsed", "false");
+  });
+
+  it("runs a command from the shell's list", async () => {
+    renderShell();
+    fireEvent.click(screen.getByTestId("palette-open"));
+    await screen.findByTestId("command-palette");
+
+    fireEvent.keyDown(screen.getByTestId("palette-input"), { key: "Enter" });
+
+    expect(paletteRun).toHaveBeenCalled();
   });
 });
 

@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
+import { CommandPalette, type Command } from "../../components/CommandPalette";
 import {
   IconClose,
   IconCollapse,
@@ -26,6 +27,7 @@ import {
   IconNew,
   IconProjects,
   IconReview,
+  IconSearch,
   IconSun,
   IconTemplates,
 } from "../../components/icons";
@@ -62,6 +64,14 @@ function readCollapsed(): boolean {
   }
 }
 
+/** What to print on the palette's keycap. Reading the platform rather than
+ *  hardcoding "Ctrl": a Mac user told to press Ctrl+K presses Ctrl+K, and
+ *  nothing happens twice before they try the other one. */
+function modifierLabel(): string {
+  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return /Mac|iPhone|iPad|iPod/.test(ua) ? "⌘K" : "Ctrl K";
+}
+
 export function AdminShell({
   client,
   apiKey,
@@ -72,6 +82,8 @@ export function AdminShell({
   title,
   crumbs,
   currentCrumb,
+  commands,
+  onPaletteOpen,
   children,
 }: {
   client: MiniLpClient;
@@ -88,11 +100,18 @@ export function AdminShell({
    *  — inside a project the heading names the project and the last crumb names
    *  the section (`Projects / Image QA / Units`). Defaults to `title`. */
   currentCrumb?: string;
+  /** Everything `Cmd/Ctrl+K` can reach. Built by `AdminApp` (see commands.ts) —
+   *  the shell renders the palette but has no opinion about what is in it. */
+  commands: Command[];
+  /** Fired the moment the palette opens, so the caller can fetch the half of
+   *  the command set that costs a request. */
+  onPaletteOpen?: () => void;
   children: ReactNode;
 }) {
   const [collapsedPref, setCollapsedPref] = useState<boolean>(readCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [keyOpen, setKeyOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Two breakpoints, two different behaviours. Below 900px the rail collapses
   // to icons because the content column needs the room; below 640px there is no
@@ -117,12 +136,34 @@ export function AdminShell({
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const keyButtonRef = useRef<HTMLButtonElement | null>(null);
   const keyInputRef = useRef<HTMLInputElement | null>(null);
+  const paletteButtonRef = useRef<HTMLButtonElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
   const railId = useId();
   const keyPopoverId = useId();
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   useFocusTrap(drawerRef, mobile && drawerOpen, closeDrawer);
+
+  // Focus the trigger *before* mounting the palette, so the focus trap captures
+  // it as the element to restore to. Opened from Cmd+K with focus on the body,
+  // the trap would otherwise have nothing to give focus back to on close, and
+  // the admin would land at the top of the document.
+  const openPalette = useCallback(() => {
+    paletteButtonRef.current?.focus();
+    setPaletteOpen(true);
+  }, []);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const togglePalette = useCallback(() => {
+    if (paletteOpen) closePalette();
+    else openPalette();
+  }, [paletteOpen, closePalette, openPalette]);
+
+  // Announced as an effect rather than from inside the click handler, so it
+  // fires exactly once per open however the palette was opened — button, Cmd+K,
+  // or a future caller.
+  useEffect(() => {
+    if (paletteOpen) onPaletteOpen?.();
+  }, [paletteOpen, onPaletteOpen]);
 
   // The drawer is only a drawer below 640px. Growing the window past that with
   // it open would otherwise leave an invisible trap holding focus.
@@ -173,7 +214,7 @@ export function AdminShell({
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
-      if (drawerOpen || keyOpen) return;
+      if (drawerOpen || keyOpen || paletteOpen) return;
 
       if (pendingG) {
         const dest: Record<string, string> = {
@@ -208,7 +249,24 @@ export function AdminShell({
       window.removeEventListener("keydown", onKey);
       clearPending();
     };
-  }, [drawerOpen, keyOpen, toggleCollapsed]);
+  }, [drawerOpen, keyOpen, paletteOpen, toggleCollapsed]);
+
+  // Cmd/Ctrl+K — the palette (UX plan, phase 6). A modifier combination rather
+  // than a bare letter, and therefore deliberately *not* guarded by
+  // `isTypingTarget`: the whole point is that it works from inside the unit
+  // browser's filter box, where a bare key cannot. `preventDefault` because
+  // Ctrl+K is the browser's own "focus the search bar" on some platforms, and
+  // losing the keystroke to the omnibox is the one outcome worse than nothing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      togglePalette();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [togglePalette]);
 
   // Escape closes the key popover and hands focus back to the control that
   // opened it, which is the minimum a popover owes the keyboard.
@@ -492,6 +550,27 @@ export function AdminShell({
           </div>
 
           <div className="mlp-cmdbar-tools">
+            {/* The palette's discoverability. A keyboard feature nobody is told
+                about is a keyboard feature nobody uses, and it is also the only
+                way a pointer reaches it. The visible text *is* the accessible
+                name — an `aria-label` saying something else would put a speech
+                user's "click Search or jump to" out of reach (WCAG 2.5.3). */}
+            <button
+              type="button"
+              className="mlp-cmdk"
+              ref={paletteButtonRef}
+              onClick={togglePalette}
+              aria-haspopup="dialog"
+              aria-expanded={paletteOpen}
+              data-testid="palette-open"
+            >
+              <IconSearch size={15} />
+              <span className="mlp-cmdk-text">Search or jump to…</span>
+              <kbd className="mlp-cmdk-key" aria-hidden="true">
+                {modifierLabel()}
+              </kbd>
+            </button>
+
             <div className="mlp-popover-anchor">
               <button
                 className="mlp-icon-btn"
@@ -553,6 +632,8 @@ export function AdminShell({
           {children}
         </main>
       </div>
+
+      {paletteOpen && <CommandPalette commands={commands} onClose={closePalette} />}
     </div>
   );
 }
