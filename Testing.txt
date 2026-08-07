@@ -1093,10 +1093,14 @@ export K=dev-admin-key
 # 1. Select a BUILTIN -> no Delete button at all, and the note says gallery
 #    templates cannot be deleted (clone instead).
 # 2. Click "Use as starting point" to clone it -> the copy gets a Delete button.
-# 3. Click Delete -> it does NOT delete. It asks ("Delete v1 of <name>?") and
-#    waits for "Yes, delete". Cancel backs out. One click is a misclick; two is
-#    a decision.
-# 4. Confirm -> the template disappears from the list immediately.
+# 3. Click Delete -> it does NOT delete. A modal opens, headed
+#    "Delete “<name>” v1?", with Cancel and a confirm button labelled
+#    "Delete version" (phase 7 -- the button names the act, not the click).
+#    Focus lands on Cancel, Escape cancels, and clicking the backdrop cancels.
+#    Tab stays inside the dialog.
+# 4. Confirm -> the template disappears from the list immediately, and a toast
+#    says "Deleted “<name>” v1." -- the only confirmation available,
+#    since the thing an inline note would have hung off has just been removed.
 # 5. Now clone again, and create a project on the copy (#/admin/new). Come back
 #    to the gallery and select that copy:
 #    -> Delete is DISABLED, and underneath it names the blocking project:
@@ -1105,7 +1109,9 @@ export K=dev-admin-key
 #    thing can't be deleted should be visible, not discovered via an error.
 # 6. Edit a custom template's schema in the builder so it bumps to v2. Back in
 #    the gallery an "all N versions" checkbox appears next to Delete. Tick it ->
-#    the prompt changes to "Delete all 2 versions of <name>?".
+#    the dialog is headed "Delete all 2 versions of “<name>”?" and its
+#    confirm button reads "Delete 2 versions", so the wider blast radius is
+#    visible on the button being pressed and not only in the checkbox.
 #    If ANY version is in use, the lineage delete is blocked even when the
 #    version you have selected is free — it is all-or-nothing on purpose, so a
 #    lineage is never left with holes in it.

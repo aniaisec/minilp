@@ -232,3 +232,16 @@ export function IconAlert(p: IconProps) {
     </Icon>
   );
 }
+
+/* Phase 7: the success toast. The only icon in the set that means "it worked",
+   which is the whole point of the phase — every operation below had exactly one
+   way to report itself, and it was failure. */
+
+export function IconCheck(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.2 2.4 2.4 4.6-5" />
+    </Icon>
+  );
+}

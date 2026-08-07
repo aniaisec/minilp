@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useToast } from "../../components/Toast";
 import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type {
@@ -77,6 +78,7 @@ export function JudgesPanel({
   client: MiniLpClient;
   projectId: number;
 }) {
+  const toast = useToast();
   const [enrolled, setEnrolled] = useState<EnrolledJudge[]>([]);
   const [configs, setConfigs] = useState<JudgeConfig[]>([]);
   const [providers, setProviders] = useState<string[]>([]);
@@ -127,6 +129,23 @@ export function JudgesPanel({
     }
   };
 
+  // A judge run is the longest operation in the admin surface and the one most
+  // likely to be started and then left. The report card below says everything,
+  // but it renders a long way down the page — so the outcome is also toasted,
+  // and a run that *stopped* is toasted as a failure rather than as news.
+  //
+  // "Stopped" is not an error in the HTTP sense: the request succeeded and the
+  // labels that were written are real. It is a failure in the only sense that
+  // matters here — the work the admin asked for did not all happen, and a
+  // pinned message is what stops that being discovered at invoice time (§7.3).
+  //
+  // The discriminator is `status`, NOT `stopped_reason`. Every run carries a
+  // `stopped_reason` — a healthy one reports `"limit"` (it did the slots it was
+  // asked for) or `"exhausted"` (nothing left to label), which is why the run
+  // history below renders the field as an ordinary description. Only the budget
+  // caps and a failing provider set `status === "stopped"`
+  // (backend/app/services/judges/orchestrator.py). Keying off the reason would
+  // have made every successful run announce itself as a failure.
   const run = (dry: boolean, judgeId?: number) =>
     act(dry ? "dry" : "run", async () => {
       const result = await client.runJudges(projectId, {
@@ -135,6 +154,31 @@ export function JudgesPanel({
         judge_config_id: judgeId,
       });
       setReport(result);
+
+      const stopped = result.runs.filter((r) => r.status === "stopped");
+      if (stopped.length > 0) {
+        toast.error(
+          `Judge run stopped early — ${result.labels_written} label${
+            result.labels_written === 1 ? "" : "s"
+          } written.`,
+          stopped.map((r) => stopReasonText(r.stopped_reason)).join("; "),
+        );
+      } else if (dry) {
+        toast.success(
+          "Estimate ready — nothing was charged.",
+          `${money(result.estimated_cost_usd)} for ${result.runs.reduce(
+            (n, r) => n + r.slots_attempted,
+            0,
+          )} slots.`,
+        );
+      } else {
+        toast.success(
+          `Judge run finished — ${result.labels_written} label${
+            result.labels_written === 1 ? "" : "s"
+          } written.`,
+          `${money(result.cost_usd)} spent.`,
+        );
+      }
     });
 
   const unenrolled = configs.filter(

@@ -6,6 +6,7 @@
 
 import { useCallback, useState } from "react";
 
+import { useToast } from "../../components/Toast";
 import { Button, Card, ErrorState } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { ExportFormat } from "../../api/types";
@@ -48,6 +49,7 @@ export function ExportPanel({
   client: MiniLpClient;
   projectId: number;
 }) {
+  const toast = useToast();
   const [format, setFormat] = useState<ExportFormat>("labels");
   const [preview, setPreview] = useState<string | null>(null);
   const [rowCount, setRowCount] = useState<number | null>(null);
@@ -84,16 +86,39 @@ export function ExportPanel({
     }
   }, [client, projectId, format]);
 
+  // The clearest case in the phase: a download is the one operation whose
+  // success leaves *nothing* on the page. The file lands in a folder the app
+  // cannot see, browsers show the shelf differently or not at all, and until
+  // now a failed export and a successful one looked exactly the same here.
   const download = async () => {
+    const filename = `project-${projectId}-${format}.jsonl`;
     try {
       const text = await client.fetchExport(projectId, format);
       const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `project-${projectId}-${format}.jsonl`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+      // The row count leads, because it is the check that matters: an export
+      // of zero rows downloads perfectly well and is never what anyone meant.
+      // Zero is called out rather than reported as a cheerful success.
+      const rows = text.split("\n").filter((l) => l.trim()).length;
+      if (rows === 0) {
+        toast.show({
+          tone: "info",
+          title: "Exported 0 rows.",
+          body: `${filename} — the file downloaded, but there was nothing to put in it.`,
+        });
+      } else {
+        toast.success(`Exported ${rows} row${rows === 1 ? "" : "s"}.`, filename);
+      }
     } catch (e) {
+      // Inline only. `ErrorState` already carries `role="alert"`, so adding a
+      // toast here would announce the same sentence twice — and the inline
+      // state is the better of the two, because it is anchored to the control
+      // that failed and stays until the next attempt. The rule across the
+      // phase: a toast is for an outcome with nowhere on the page to live.
       setError(e instanceof Error ? e.message : String(e));
     }
   };
@@ -175,6 +200,7 @@ export function ExportPanel({
                 a.download = `project-${projectId}-bundle.json`;
                 a.click();
                 URL.revokeObjectURL(url);
+                toast.success("Bundle downloaded.", `project-${projectId}-bundle.json`);
               } catch (e) {
                 setBundleError(e instanceof Error ? e.message : String(e));
               } finally {

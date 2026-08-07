@@ -24,7 +24,7 @@ declare global {
        *  mounted directly, since its config lives in the query string and a
        *  `file://` document cannot reliably carry one. `gallery` is the phase-5
        *  specimen sheet, which is markup rather than a route. */
-      view?: "admin" | "annotate" | "gallery";
+      view?: "admin" | "annotate" | "gallery" | "feedback";
       theme?: "light" | "dark";
       width?: number;
       collapsed?: boolean;
@@ -109,12 +109,14 @@ const labelClient: TaskClient = {
 
 const root = createRoot(document.getElementById("root")!);
 
-if (snap.view === "gallery") {
+if (snap.view === "gallery" || snap.view === "feedback") {
   // No shell, so no theme toggle to click — set the attribute the shells would
   // have set. `data-mode` too, or the accent stays at its unmoded default.
   document.documentElement.setAttribute("data-theme", snap.theme ?? "light");
   document.documentElement.setAttribute("data-mode", "admin");
-  root.render(<Gallery />);
+  // `feedback` is the phase-7 slice of the same sheet, on its own so it starts
+  // at the top of the frame — the driver cannot scroll to it otherwise.
+  root.render(<Gallery only={snap.view === "feedback" ? "feedback" : undefined} />);
 } else if (snap.view === "annotate") {
   root.render(
     <Annotate

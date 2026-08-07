@@ -102,13 +102,47 @@ export const TEMPLATES = [
     id: 4,
     name: "Image QA",
     version: 3,
+    kind: "custom",
     schema: { layout: "stack", display: [], inputs: [] },
   },
   {
     id: 7,
     name: "Ticket triage",
     version: 1,
+    kind: "custom",
     schema: { layout: "stack", display: [], inputs: [] },
+  },
+];
+
+/** Phase 7: the delete control stays disabled until its usage call answers, so
+ *  the confirmation scenario needs one. Three versions and no blocking project
+ *  — that is the state where the dialog has something interesting to say, since
+ *  the lineage checkbox changes what the confirm button is offering to do. */
+export const TEMPLATE_USAGE = {
+  template_id: 4,
+  name: "Image QA",
+  versions: 3,
+  deletable: true,
+  projects: [],
+  lineage_projects: [],
+};
+
+export const TEMPLATE_SAMPLE = {
+  template_id: 4,
+  saved: true,
+  sample: { image_url: "https://cdn.example.com/catalogue/00412.jpg", sku: "CH-00412" },
+  fields: { required: ["image_url"], optional: ["sku"] },
+};
+
+/** Phase 7: a registered hook, so removing one can be the frame that shows a
+ *  toast on a real screen rather than on a specimen sheet. */
+export const WEBHOOKS = [
+  {
+    id: 3,
+    project_id: 1,
+    event: "budget.cap_reached",
+    target_url: "https://hooks.example.com/minilp/budget",
+    has_secret: true,
   },
 ];
 
@@ -385,7 +419,12 @@ export const ROUTES: [RegExp, unknown][] = [
   [/\/api\/projects$/, PROJECTS],
   [/\/api\/judges\/providers/, { providers: ["mock", "anthropic", "openai", "openai_compatible"] }],
   [/\/api\/judges$/, JUDGE_CONFIGS],
-  [/\/api\/webhooks/, []],
+  [/\/api\/webhooks/, WEBHOOKS],
+  // Ahead of the bare `/templates` pattern: the list route would otherwise
+  // swallow `/templates/4/usage` too, since it is only anchored at the end.
+  [/\/api\/templates\/\d+\/usage/, TEMPLATE_USAGE],
+  [/\/api\/templates\/\d+\/sample/, TEMPLATE_SAMPLE],
+  [/\/api\/templates\/\d+$/, TEMPLATES[0]],
   [/\/api\/templates$/, TEMPLATES],
   [/\/api\/me:annotator/, { id: 42, display_name: "you" }],
 ];

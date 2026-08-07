@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useToast } from "../../components/Toast";
 import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type { Webhook, WebhookDelivery } from "../../api/types";
@@ -48,6 +49,7 @@ export function WebhooksPanel({
   client: MiniLpClient;
   projectId: number;
 }) {
+  const toast = useToast();
   const [hooks, setHooks] = useState<Webhook[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [event, setEvent] = useState(EVENTS[0].id);
@@ -75,13 +77,19 @@ export function WebhooksPanel({
     void load();
   }, [load]);
 
-  const act = async (fn: () => Promise<unknown>) => {
+  // `done` is the sentence to toast on success. Registering clears the form and
+  // removing takes a row out of the table, so in both cases the visible change
+  // is a *disappearance* — which reads the same as a click that did nothing.
+  const act = async (done: string, fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     try {
       await fn();
       await load();
+      toast.success(done);
     } catch (e) {
+      // Inline only — `ErrorState` sits at the top of this same card, a few
+      // rows from the button that failed, and already announces itself.
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -89,7 +97,7 @@ export function WebhooksPanel({
   };
 
   const create = () =>
-    act(async () => {
+    act("Webhook registered.", async () => {
       await client.createWebhook({
         event,
         target_url: url.trim(),
@@ -141,7 +149,7 @@ export function WebhooksPanel({
                   size="sm"
                   data-testid={`delete-webhook-${h.id}`}
                   disabled={busy}
-                  onClick={() => void act(() => client.deleteWebhook(h.id))}
+                  onClick={() => void act("Webhook removed.", () => client.deleteWebhook(h.id))}
                 >
                   Remove
                 </Button>

@@ -8,6 +8,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { useToast } from "../../components/Toast";
 import { Button, Card, EmptyState, ErrorState } from "../../components/ui";
 import type { MiniLpClient, TaskClient } from "../../api/client";
 import type {
@@ -44,9 +46,16 @@ function previewClient(task: Task): TaskClient {
 // Delete, with the reason it can't be deleted shown *before* the click rather
 // than after. The usage call is what makes that possible: a disabled button that
 // says "in use by 'Q3 run' (#4)" is a different experience from a live button
-// that 409s. Confirmation is a second click, not a modal — the operation is
-// refused whenever it would lose data, so the only thing left to guard against
-// is a misclick.
+// that 409s.
+//
+// Phase 7 moved the confirmation into the shared dialog. The previous version
+// was a second inline click, on the argument that the server refuses any delete
+// that would lose data, so the only thing left to guard was a misclick. That
+// argument holds for the *data*, but not for the interaction: the second button
+// appeared where the first one had been, so the confirm landed under a cursor
+// already there, and nothing about it trapped focus or announced itself. It
+// also could not say plainly that "all 3 versions" is a different, larger act
+// than "v3" — the checkbox that decides which one sat outside the prompt.
 function DeleteTemplate({
   client,
   template,
@@ -56,6 +65,7 @@ function DeleteTemplate({
   template: Template;
   onDeleted: (removedIds: number[]) => void;
 }) {
+  const toast = useToast();
   const [usage, setUsage] = useState<TemplateUsage | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [lineage, setLineage] = useState(false);
@@ -75,14 +85,26 @@ function DeleteTemplate({
 
   const blockers = lineage ? (usage?.lineage_projects ?? []) : (usage?.projects ?? []);
   const blocked = blockers.length > 0;
+  const versions = usage?.versions ?? 1;
 
   const run = async () => {
     setBusy(true);
     setError(null);
     try {
       const result = await client.deleteTemplate(template.id, lineage ? "all" : "one");
+      setConfirming(false);
+      // The toast, not an inline note: what was deleted is the thing the note
+      // would have been attached to, so there is nowhere on the page left to
+      // put it.
+      toast.success(
+        result.deleted.length === 1
+          ? `Deleted “${template.name}” v${template.version}.`
+          : `Deleted ${result.deleted.length} versions of “${template.name}”.`,
+      );
       onDeleted(result.deleted.map((d) => d.id));
     } catch (e) {
+      // Inline rather than a toast: the template is still on screen, and the
+      // reason it would not delete belongs next to the button that refused.
       setError(e instanceof Error ? e.message : String(e));
       setConfirming(false);
     } finally {
@@ -92,40 +114,20 @@ function DeleteTemplate({
 
   return (
     <span className="mlp-actions" style={{ gap: 8 }} data-testid="template-delete">
-      {!confirming ? (
-        <Button
-          variant="danger"
-          data-testid="template-delete-start"
-          disabled={blocked || usage === null}
-          title={
-            blocked
-              ? `In use by ${blockers.map((b) => `'${b.name}' (#${b.project_id})`).join(", ")}`
-              : "Delete this template version"
-          }
-          onClick={() => setConfirming(true)}
-        >
-          Delete
-        </Button>
-      ) : (
-        <>
-          <span className="mlp-muted" data-testid="template-delete-prompt">
-            Delete {lineage ? `all ${usage?.versions} versions of` : `v${template.version} of`}{" "}
-            <strong>{template.name}</strong>?
-          </span>
-          <Button
-            variant="danger"
-            data-testid="template-delete-confirm"
-            disabled={busy || blocked}
-            onClick={() => void run()}
-          >
-            {busy ? "Deleting…" : "Yes, delete"}
-          </Button>
-          <Button data-testid="template-delete-cancel" onClick={() => setConfirming(false)}>
-            Cancel
-          </Button>
-        </>
-      )}
-      {(usage?.versions ?? 1) > 1 && (
+      <Button
+        variant="danger"
+        data-testid="template-delete-start"
+        disabled={blocked || usage === null}
+        title={
+          blocked
+            ? `In use by ${blockers.map((b) => `'${b.name}' (#${b.project_id})`).join(", ")}`
+            : "Delete this template version"
+        }
+        onClick={() => setConfirming(true)}
+      >
+        Delete
+      </Button>
+      {versions > 1 && (
         <label className="mlp-inline-label">
           <input
             type="checkbox"
@@ -133,7 +135,7 @@ function DeleteTemplate({
             data-testid="template-delete-lineage"
             onChange={(e) => setLineage(e.target.checked)}
           />
-          all {usage?.versions} versions
+          all {versions} versions
         </label>
       )}
       {blocked && (
@@ -146,6 +148,29 @@ function DeleteTemplate({
         <span className="mlp-error-text" data-testid="template-delete-error">
           {error}
         </span>
+      )}
+
+      {confirming && (
+        <ConfirmDialog
+          title={
+            lineage
+              ? `Delete all ${versions} versions of “${template.name}”?`
+              : `Delete “${template.name}” v${template.version}?`
+          }
+          // The label carries the count, so the difference between the two
+          // things this dialog can do is visible on the button being pressed
+          // and not only in the checkbox that was ticked a moment ago.
+          confirmLabel={lineage ? `Delete ${versions} versions` : "Delete version"}
+          busy={busy}
+          busyLabel="Deleting…"
+          data-testid="template-delete-dialog"
+          onConfirm={() => void run()}
+          onCancel={() => setConfirming(false)}
+        >
+          {lineage
+            ? "Every version of this template is removed, including its edit history. This cannot be undone."
+            : "This version is removed. Other versions of the template are left alone. This cannot be undone."}
+        </ConfirmDialog>
       )}
     </span>
   );
@@ -168,12 +193,12 @@ export function TemplateGallery({
   /** Open the visual builder on an existing template (M6, §2.5). */
   onEdit?: (templateId: number) => void;
 }) {
+  const toast = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [sample, setSample] = useState<TemplateSample | null>(null);
   const [sampleText, setSampleText] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -189,7 +214,6 @@ export function TemplateGallery({
 
   useEffect(() => {
     if (selectedId === null) return;
-    setSaveMsg(null);
     setParseError(null);
     client
       .getTemplateSample(selectedId)
@@ -214,7 +238,6 @@ export function TemplateGallery({
 
   const onSampleChange = useCallback((text: string) => {
     setSampleText(text);
-    setSaveMsg(null);
     try {
       JSON.parse(text);
       setParseError(null);
@@ -229,11 +252,15 @@ export function TemplateGallery({
       const parsed = JSON.parse(sampleText);
       const saved = await client.saveTemplateSample(selectedId, parsed);
       setSample(saved);
-      setSaveMsg("Saved. The project wizard will prefill this sample.");
+      // Was a `<span>` beside the button that stayed until the next keystroke.
+      // Saving is the one thing in this panel with no visible consequence —
+      // the textarea looks identical before and after — so the acknowledgement
+      // is the entire feedback, and it should arrive somewhere the eye goes.
+      toast.success("Sample saved.", "The project wizard will prefill it.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      toast.error("The sample could not be saved.", e instanceof Error ? e.message : String(e));
     }
-  }, [client, selectedId, sampleText, parseError]);
+  }, [client, selectedId, sampleText, parseError, toast]);
 
   const previewTask: Task | null = selected
     ? {
@@ -355,10 +382,14 @@ export function TemplateGallery({
                   </ErrorState>
                 )}
                 <div className="mlp-actions" style={{ marginTop: 8 }}>
-                  <Button variant="primary" disabled={!!parseError} onClick={save}>
+                  <Button
+                    variant="primary"
+                    data-testid="gallery-save-sample"
+                    disabled={!!parseError}
+                    onClick={save}
+                  >
                     Save sample
                   </Button>
-                  {saveMsg && <span className="mlp-muted">{saveMsg}</span>}
                 </div>
               </details>
             </Card>
