@@ -95,24 +95,71 @@ describe("ExitToHome", () => {
     await waitFor(() => expect(nav.value).toBe("?annotator=9"));
   });
 
+  // Phase 7 replaced `window.confirm` here with the shared dialog. These tests
+  // no longer stub a global, which is itself part of the point: the previous
+  // versions could only assert that *a* native prompt appeared, never what it
+  // said or which button kept the annotator's work.
   it("warns before discarding an unsubmitted answer, and stays put if declined", async () => {
     const nav = stubNavigation();
     const onLeave = vi.fn();
-    vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<ExitToHome href="?annotator=9" onLeave={onLeave} dirty />);
 
     fireEvent.click(screen.getByTestId("btn-home"));
-    await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+    const dialog = await screen.findByTestId("exit-confirm");
+    expect(dialog).toHaveTextContent("Discard your unsubmitted answer?");
+
+    fireEvent.click(screen.getByTestId("confirm-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("exit-confirm")).not.toBeInTheDocument());
     expect(onLeave).not.toHaveBeenCalled();
     expect(nav.value).toBe("");
   });
 
-  it("does not warn when there is nothing unsubmitted", async () => {
+  it("names both buttons after what they do, not after the click", async () => {
+    // The whole complaint against `window.confirm`: "OK" and "Cancel" gave no
+    // clue which one kept the work.
     stubNavigation();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ExitToHome href="?annotator=9" dirty />);
+    fireEvent.click(screen.getByTestId("btn-home"));
+
+    expect(await screen.findByTestId("confirm-accept")).toHaveTextContent("Discard and leave");
+    expect(screen.getByTestId("confirm-cancel")).toHaveTextContent("Keep working");
+  });
+
+  it("leaves once the discard is confirmed", async () => {
+    const nav = stubNavigation();
+    const onLeave = vi.fn().mockResolvedValue(undefined);
+    render(<ExitToHome href="?annotator=9" onLeave={onLeave} dirty />);
+
+    fireEvent.click(screen.getByTestId("btn-home"));
+    fireEvent.click(await screen.findByTestId("confirm-accept"));
+
+    // Confirming runs the same departure the clean path runs — the lease is
+    // still released before navigating.
+    await waitFor(() => expect(onLeave).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(nav.value).toBe("?annotator=9"));
+  });
+
+  it("ignores the exit hotkey while its own dialog is open", async () => {
+    // Otherwise a held or repeated `x` reopens exit from inside the modal it
+    // just opened.
+    const nav = stubNavigation();
+    render(<ExitToHome href="?annotator=9" dirty />);
+
+    fireEvent.keyDown(window, { key: "x" });
+    await screen.findByTestId("exit-confirm");
+    fireEvent.keyDown(window, { key: "x" });
+
+    expect(screen.getAllByTestId("exit-confirm")).toHaveLength(1);
+    expect(nav.value).toBe("");
+  });
+
+  it("does not warn when there is nothing unsubmitted", async () => {
+    const nav = stubNavigation();
     render(<ExitToHome href="?annotator=9" dirty={false} />);
     fireEvent.click(screen.getByTestId("btn-home"));
-    await waitFor(() => expect(window.confirm).not.toHaveBeenCalled());
+
+    await waitFor(() => expect(nav.value).toBe("?annotator=9"));
+    expect(screen.queryByTestId("exit-confirm")).not.toBeInTheDocument();
   });
 
   it("responds to its hotkey, but not while typing", async () => {
@@ -187,7 +234,6 @@ describe("the annotation view exits by releasing its held slot", () => {
 
   it("warns first when an answer has been started but not submitted", async () => {
     stubNavigation();
-    const confirmed = vi.spyOn(window, "confirm").mockReturnValue(false);
     const client = mockClient(makeTask());
     render(
       <Annotate
@@ -205,13 +251,48 @@ describe("the annotation view exits by releasing its held slot", () => {
     fireEvent.keyDown(window, { key: "1" });
     fireEvent.click(screen.getByTestId("btn-home"));
 
-    await waitFor(() => expect(confirmed).toHaveBeenCalled());
+    await screen.findByTestId("exit-confirm");
+    // Crucially, the slot is *not* released until the discard is confirmed —
+    // opening the dialog must not be half a departure.
     expect(client.skip).not.toHaveBeenCalled();
+  });
+
+  it("stands the annotation hotkeys down while the discard dialog is up", async () => {
+    // The one that `window.confirm` used to get for free by blocking the event
+    // loop. Without an explicit guard, Enter behind this dialog *submits* the
+    // answer it is offering to discard, `s` skips the task, and the option keys
+    // edit the very thing under discussion — the focus trap cannot stop a
+    // window-level listener.
+    stubNavigation();
+    const client = mockClient(makeTask());
+    render(
+      <Annotate
+        client={client}
+        annotatorId={9}
+        projectId={1}
+        schema={IMAGE_CLASSIFICATION}
+        guidelines=""
+        homeHref="?annotator=9"
+      />,
+    );
+    await screen.findByTestId("btn-home");
+
+    fireEvent.keyDown(window, { key: "1" });
+    fireEvent.click(screen.getByTestId("btn-home"));
+    await screen.findByTestId("exit-confirm");
+
+    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.keyDown(window, { key: "s" });
+    fireEvent.keyDown(window, { key: "?" });
+
+    expect(client.submit).not.toHaveBeenCalled();
+    expect(client.skip).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("hotkey-overlay")).not.toBeInTheDocument();
+    expect(screen.getByTestId("exit-confirm")).toBeInTheDocument();
   });
 
   it("never warns about a submitted answer", async () => {
     const nav = stubNavigation();
-    const confirmed = vi.spyOn(window, "confirm").mockReturnValue(true);
     const client = mockClient(makeTask());
     render(
       <Annotate
@@ -232,7 +313,7 @@ describe("the annotation view exits by releasing its held slot", () => {
 
     fireEvent.click(screen.getByTestId("btn-home"));
     await waitFor(() => expect(nav.value).toBe("?annotator=9"));
-    expect(confirmed).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("exit-confirm")).not.toBeInTheDocument();
   });
 
   it("renders no exit control when there is nowhere to go back to", async () => {

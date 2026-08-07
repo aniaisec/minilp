@@ -2884,3 +2884,167 @@ input.mlp-number {
     font-size: 12px;
   }
 }
+
+/* ---- toasts + confirmation dialog (phase 7) ------------------------------ */
+
+/* The region is fixed, bottom-right, and `pointer-events: none` so an empty
+   stack never sits over the controls it is anchored beside. The toasts
+   themselves take pointer events back — their dismiss button has to be
+   clickable. */
+.mlp-toast-region {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(380px, calc(100vw - var(--space-5)));
+  pointer-events: none;
+}
+.mlp-toast-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+/* No `:empty { display: none }` here, deliberately. `display: none` takes the
+   element out of the accessibility tree, so the region would arrive in the same
+   frame as its first toast — exactly the "inserted with its content, therefore
+   never announced" failure Toast.tsx exists to avoid. An empty flex column is
+   already zero-height; the only cost of leaving it in is one gap between two
+   invisible boxes, and `row-gap: normal` is not paid by empty children in a
+   flex column anyway. */
+
+.mlp-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* Level 3: a toast floats above everything, including the sticky command bar
+     it usually appears next to. */
+  box-shadow: var(--shadow-3);
+  background: var(--surface);
+  color: var(--text);
+  pointer-events: auto;
+  animation: mlp-toast-in var(--motion) var(--ease);
+}
+@keyframes mlp-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* The tone is carried on the leading edge rather than by tinting the whole
+   surface: a fully tinted toast has to re-solve text contrast per tone, and the
+   icon already says which kind it is. */
+.mlp-toast-success {
+  border-inline-start: 3px solid var(--ok);
+}
+.mlp-toast-error {
+  border-inline-start: 3px solid var(--danger);
+}
+/* Neutral rather than accent-coloured on purpose: the region is mounted above
+   the surface switch in App.tsx, so it sits outside both `[data-mode]` roots
+   and `--accent` there is always the admin blue — which would be quietly wrong
+   on the teal labeler surface. */
+.mlp-toast-info {
+  border-inline-start: 3px solid var(--border-strong);
+}
+.mlp-toast-icon {
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+}
+.mlp-toast-success .mlp-toast-icon {
+  color: var(--ok);
+}
+.mlp-toast-error .mlp-toast-icon {
+  color: var(--danger);
+}
+.mlp-toast-info .mlp-toast-icon {
+  color: var(--text-muted);
+}
+.mlp-toast-text {
+  flex: 1;
+  min-width: 0;
+}
+.mlp-toast-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mlp-toast-body {
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  /* Server messages can be one unbroken token; wrapping beats a toast that
+     runs off the edge of the viewport. */
+  overflow-wrap: anywhere;
+}
+.mlp-toast-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -2px -2px 0 0;
+}
+
+/* --- confirmation dialog --- */
+
+/* The native <dialog> is `display: none` until open and centres itself in the
+   top layer, so this is only the box. */
+.mlp-dialog {
+  margin: auto;
+  padding: 0;
+  width: min(440px, calc(100vw - var(--space-6)));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  background: var(--surface);
+  color: var(--text);
+}
+.mlp-dialog::backdrop {
+  background: rgba(6, 9, 14, 0.72);
+}
+.mlp-dialog-body {
+  padding: var(--space-5);
+}
+.mlp-dialog-title {
+  margin: 0 0 var(--space-2);
+  font-size: 17px;
+}
+.mlp-dialog-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mlp-dialog-text p {
+  margin: 0 0 var(--space-2);
+}
+.mlp-dialog-text p:last-child {
+  margin-bottom: 0;
+}
+.mlp-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+@media (max-width: 640px) {
+  /* Full width at the reflow size, and anchored to the bottom edge so a toast
+     never covers the sticky task bar at the top of the labeler surface. */
+  .mlp-toast-region {
+    right: var(--space-2);
+    left: var(--space-2);
+    bottom: var(--space-2);
+    width: auto;
+  }
+  .mlp-dialog-actions {
+    flex-direction: column-reverse;
+  }
+  .mlp-dialog-actions .mlp-btn {
+    width: 100%;
+  }
+}

@@ -144,6 +144,55 @@ const SCENARIOS = [
     width: 560,
     clicks: ["palette-open"],
   },
+
+  // --- phase 7: feedback and confirmation ---------------------------------
+  //
+  // The specimen frames above (`components-*`) grew a toast stack and a dialog
+  // box; these three are the same things on real screens.
+  //
+  // The confirmation. Same click on both trees, and that is the comparison:
+  // before, it swapped the Delete button for a second button and a line of grey
+  // text, in place, under a cursor already sitting there. After, it is a modal
+  // that names the act and holds focus.
+  {
+    name: "confirm-delete-light",
+    hash: "#/admin/templates",
+    theme: "light",
+    width: 1440,
+    clicks: ["template-delete-start"],
+  },
+  {
+    name: "confirm-delete-dark",
+    hash: "#/admin/templates",
+    theme: "dark",
+    width: 1440,
+    clicks: ["template-delete-start"],
+  },
+  // A toast on a real surface. The export tab has no `/export` fixture, so the
+  // download 404s — which is the frame worth having: an *error* toast is the
+  // one that pins itself open, so it is still on screen whenever the driver
+  // gets round to capturing. A success toast clears itself after five seconds
+  // and is only catchable at the `data-snapshot-ready` mark.
+  {
+    name: "toast-light",
+    hash: "#/admin/project/1/export",
+    theme: "light",
+    width: 1440,
+    clicks: ["export-download"],
+  },
+  {
+    name: "toast-dark",
+    hash: "#/admin/project/1/export",
+    theme: "dark",
+    width: 1440,
+    clicks: ["export-download"],
+  },
+  // The specimens, on their own so they start at the top of the frame. On the
+  // "before" tree none of these class names have rules, so the section renders
+  // as unstyled text — a fair picture of what the app had to say about a
+  // successful export before this phase, namely nothing.
+  { name: "feedback-light", view: "feedback", hash: "", theme: "light", width: 1000 },
+  { name: "feedback-dark", view: "feedback", hash: "", theme: "dark", width: 1000 },
 ];
 
 const result = await viteBuild({

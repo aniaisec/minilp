@@ -110,6 +110,12 @@ export function Annotate({
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [guidelinesOpen, setGuidelinesOpen] = useState(true);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  // Raised by `ExitToHome` while its confirmation is up (phase 7). Held here
+  // rather than there because the thing that has to stand down is this
+  // component's window-level key dispatcher, and a child cannot reach it.
+  const [exitConfirming, setExitConfirming] = useState(false);
+  /** Any modal is up, so the hotkey dispatcher must decline. */
+  const modalOpen = overlayOpen || exitConfirming;
   // Quality state (M4, §6). `paused` holds the reason the backend gave; while it
   // is set the annotator has no queue, so the view stops asking for tasks.
   const [paused, setPaused] = useState<string | null>(null);
@@ -295,16 +301,27 @@ export function Annotate({
           setOverlayOpen(false);
           e.preventDefault();
         }
+        // Escape inside the exit confirmation is the dialog's own business —
+        // its focus trap handles it and restores focus. Falling through here
+        // would clear the selection the dialog is asking about.
         return;
       }
 
-      // While the dialog is open, only the key that closes it does anything.
+      // While a modal is open, only the key that closes it does anything.
       // A hotkey that fires behind a modal answers a question the person cannot
       // see, and the dialog's own focus trap cannot stop a window-level
       // listener — it has to decline (§ UX plan, "hotkeys do not fight
       // assistive technology").
-      if (overlayOpen) {
-        if (token === "?") {
+      //
+      // Phase 7 added a second modal on this surface, and it is the one where
+      // this matters most: the exit confirmation asks whether to discard an
+      // unsubmitted answer, and without this guard `Enter` behind it would
+      // *submit* that answer, `s` would skip the task, and the option keys
+      // would edit the very thing being discussed. `window.confirm` made that
+      // impossible by blocking the event loop; the replacement has to decline
+      // deliberately.
+      if (modalOpen) {
+        if (overlayOpen && token === "?") {
           e.preventDefault();
           setOverlayOpen(false);
         }
@@ -372,6 +389,7 @@ export function Annotate({
     answers,
     complete,
     overlayOpen,
+    modalOpen,
     doSubmit,
     doSkip,
     undo,
@@ -447,6 +465,10 @@ export function Annotate({
               // `x` must not fire behind the shortcuts dialog: quitting the task
               // is the one action here you cannot undo.
               hotkey={!overlayOpen}
+              // Tells the dispatcher above to stand down while the discard
+              // confirmation is up — otherwise Enter behind it submits the very
+              // answer the dialog is offering to throw away.
+              onConfirmingChange={setExitConfirming}
             />
           ) : null}
           <Title className="mlp-taskbar-title" title={title}>

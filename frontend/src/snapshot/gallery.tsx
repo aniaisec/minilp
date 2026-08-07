@@ -36,7 +36,82 @@ function btn(variant: string, size?: string) {
   return `mlp-btn mlp-btn-${variant}${size && size !== "md" ? ` mlp-btn-${size}` : ""}`;
 }
 
-export function Gallery() {
+/** Phase 7. Class names rather than the `Toast` component, for the reason at the
+ *  top of this file: `src/components/Toast.tsx` does not exist on `main`, and
+ *  this sheet has to compile against both trees. On the "before" tree none of
+ *  the `.mlp-toast-*` rules exist either, so these render as three unstyled
+ *  stacks of text — which is a fair picture of what the app had to say about a
+ *  successful export before this phase, namely nothing. */
+function Toast({ tone, title, body }: { tone: string; title: string; body?: string }) {
+  const error = tone === "error";
+  return (
+    <div className={`mlp-toast mlp-toast-${tone}`}>
+      <span className="mlp-toast-icon" aria-hidden="true">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          focusable="false"
+        >
+          {error ? (
+            <>
+              <path d="M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z" />
+              <path d="M12 9v4.5" />
+              <path d="M12 17h.01" />
+            </>
+          ) : (
+            <>
+              <circle cx="12" cy="12" r="9" />
+              <path d="m8.5 12.2 2.4 2.4 4.6-5" />
+            </>
+          )}
+        </svg>
+      </span>
+      <div className="mlp-toast-text">
+        <p className="mlp-toast-title">{title}</p>
+        {body && <p className="mlp-toast-body">{body}</p>}
+      </div>
+      <button type="button" className="mlp-icon-btn mlp-toast-close" aria-label={`Dismiss: ${title}`}>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+/**
+ * `only="feedback"` renders just the phase-7 section. The sheet is taller than
+ * a viewport and a screenshot driver cannot scroll, so a section that lands
+ * below the fold is a section that never appears in a frame.
+ */
+export function Gallery({ only }: { only?: "feedback" } = {}) {
+  if (only === "feedback") {
+    return (
+      <div className="mlp-admin-main" style={{ maxWidth: 1000, padding: 24 }}>
+        <h1 style={{ fontSize: 22, margin: "0 0 4px" }}>Feedback and confirmation</h1>
+        <p className="mlp-muted" style={{ margin: "0 0 20px" }}>
+          Toasts and the confirmation dialog — UX plan phase 7.
+        </p>
+        <FeedbackSection />
+      </div>
+    );
+  }
   return (
     <div className="mlp-admin-main" style={{ maxWidth: 1000, padding: 24 }}>
       <h1 style={{ fontSize: 22, margin: "0 0 4px" }}>Shared primitives</h1>
@@ -211,7 +286,66 @@ export function Gallery() {
             </div>
           </div>
         </section>
+
+        <FeedbackSection />
       </div>
     </div>
+  );
+}
+
+function FeedbackSection() {
+  return (
+    <>
+      {/* ---- feedback: toasts and the confirmation dialog (phase 7) ---- */}
+      <section className="mlp-card">
+        <div className="mlp-card-head">
+          <div className="mlp-card-heading">
+            <h2 className="mlp-card-title">Feedback and confirmation</h2>
+            <p className="mlp-card-desc">
+              Before phase 7 none of this existed: an operation that succeeded said nothing,
+              and the only confirmation in the app was the browser's own dialog.
+            </p>
+          </div>
+        </div>
+
+        {/* Laid out in flow rather than in the fixed region, so the specimens
+            sit in the sheet next to everything else. The live component
+            renders these same three inside `.mlp-toast-region`. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 380 }}>
+          <Toast
+            tone="success"
+            title="Exported 1,284 rows."
+            body="project-1-labels.jsonl"
+          />
+          <Toast
+            tone="error"
+            title="The judge run stopped early — 41 labels written."
+            body="stopped — project budget cap reached"
+          />
+          <Toast tone="info" title="Building the bundle…" />
+        </div>
+
+        {/* The dialog, drawn as a plain box: a real <dialog> would need
+            `showModal()` and would then cover the sheet it is meant to be a
+            specimen in. Same classes, so the same rules style it. */}
+        <div className="mlp-dialog" style={{ display: "block", marginTop: 20, width: 440 }}>
+          <div className="mlp-dialog-body">
+            <h2 className="mlp-dialog-title">Delete all 3 versions of “Image QA”?</h2>
+            <div className="mlp-dialog-text">
+              Every version of this template is removed, including its edit history. This
+              cannot be undone.
+            </div>
+            <div className="mlp-dialog-actions">
+              <button type="button" className={btn("secondary")}>
+                Cancel
+              </button>
+              <button type="button" className={btn("danger")}>
+                Delete 3 versions
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
   );
 }

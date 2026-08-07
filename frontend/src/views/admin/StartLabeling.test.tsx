@@ -181,13 +181,20 @@ function galleryClient(over: Record<string, unknown> = {}) {
 }
 
 describe("TemplateGallery — delete", () => {
-  it("takes two clicks to delete, and calls the API with the version scope", async () => {
+  // Phase 7 moved the second click into the shared confirmation dialog, so the
+  // pair of assertions below is now "the dialog names what it is about to do"
+  // rather than "a second button appeared".
+  it("confirms in a dialog that names the version, then calls the API with that scope", async () => {
     const client = galleryClient();
     render(<TemplateGallery client={client} onEdit={vi.fn()} />);
 
     fireEvent.click(await screen.findByTestId("template-delete-start"));
-    expect(screen.getByTestId("template-delete-prompt")).toHaveTextContent("v1 of");
-    fireEvent.click(screen.getByTestId("template-delete-confirm"));
+    const dialog = screen.getByTestId("template-delete-dialog");
+    expect(dialog).toHaveTextContent("Delete “my-template” v1?");
+    // The confirm button names the act, not the click — the whole reason this
+    // stopped being `window.confirm`'s "OK".
+    expect(screen.getByTestId("confirm-accept")).toHaveTextContent("Delete version");
+    fireEvent.click(screen.getByTestId("confirm-accept"));
 
     await waitFor(() => expect(client.deleteTemplate).toHaveBeenCalledWith(10, "one"));
   });
@@ -197,9 +204,25 @@ describe("TemplateGallery — delete", () => {
     render(<TemplateGallery client={client} onEdit={vi.fn()} />);
 
     fireEvent.click(await screen.findByTestId("template-delete-start"));
-    fireEvent.click(screen.getByTestId("template-delete-cancel"));
+    fireEvent.click(screen.getByTestId("confirm-cancel"));
 
+    expect(screen.queryByTestId("template-delete-dialog")).not.toBeInTheDocument();
     expect(screen.getByTestId("template-delete-start")).toBeInTheDocument();
+    expect(client.deleteTemplate).not.toHaveBeenCalled();
+  });
+
+  it("Escape cancels, and does not delete", async () => {
+    // The dialog is destructive, so the cheapest possible dismissal has to be
+    // the safe one.
+    const client = galleryClient();
+    render(<TemplateGallery client={client} onEdit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByTestId("template-delete-start"));
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("template-delete-dialog")).not.toBeInTheDocument(),
+    );
     expect(client.deleteTemplate).not.toHaveBeenCalled();
   });
 
@@ -208,7 +231,7 @@ describe("TemplateGallery — delete", () => {
     render(<TemplateGallery client={client} onEdit={vi.fn()} />);
 
     fireEvent.click(await screen.findByTestId("template-delete-start"));
-    fireEvent.click(screen.getByTestId("template-delete-confirm"));
+    fireEvent.click(screen.getByTestId("confirm-accept"));
 
     await waitFor(() =>
       expect(screen.queryByTestId("template-delete-start")).not.toBeInTheDocument(),
@@ -259,8 +282,14 @@ describe("TemplateGallery — delete", () => {
 
     fireEvent.click(await screen.findByTestId("template-delete-lineage"));
     fireEvent.click(screen.getByTestId("template-delete-start"));
-    expect(screen.getByTestId("template-delete-prompt")).toHaveTextContent("all 3 versions of");
-    fireEvent.click(screen.getByTestId("template-delete-confirm"));
+    expect(screen.getByTestId("template-delete-dialog")).toHaveTextContent(
+      "Delete all 3 versions of “my-template”?",
+    );
+    // The count is on the button too: the checkbox that widened the blast
+    // radius was ticked before the dialog opened, and by the time the confirm
+    // is pressed it is behind a modal.
+    expect(screen.getByTestId("confirm-accept")).toHaveTextContent("Delete 3 versions");
+    fireEvent.click(screen.getByTestId("confirm-accept"));
 
     await waitFor(() => expect(client.deleteTemplate).toHaveBeenCalledWith(10, "all"));
   });
@@ -297,9 +326,12 @@ describe("TemplateGallery — delete", () => {
     render(<TemplateGallery client={client} onEdit={vi.fn()} />);
 
     fireEvent.click(await screen.findByTestId("template-delete-start"));
-    fireEvent.click(screen.getByTestId("template-delete-confirm"));
+    fireEvent.click(screen.getByTestId("confirm-accept"));
 
+    // Inline, not a toast: the template is still on the page, and the reason it
+    // would not go belongs beside the button that refused.
     expect(await screen.findByTestId("template-delete-error")).toHaveTextContent("Late");
     expect(screen.getByTestId("template-delete-start")).toBeInTheDocument();
+    expect(screen.queryByTestId("template-delete-dialog")).not.toBeInTheDocument();
   });
 });

@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useToast } from "../../components/Toast";
 import { Button, Card, EmptyState, ErrorState, Table } from "../../components/ui";
 import type { MiniLpClient } from "../../api/client";
 import type {
@@ -45,6 +46,7 @@ function resultSummary(result: MarketplaceImportResult): string {
 }
 
 export function MarketplacePanel({ client }: { client: MiniLpClient }) {
+  const toast = useToast();
   const [localBundles, setLocalBundles] = useState<LocalBundleInfo[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [judges, setJudges] = useState<JudgeConfig[]>([]);
@@ -290,12 +292,25 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
                   size="sm"
                   style={{ marginLeft: 10 }}
                   data-testid={`export-template-download-${t.id}`}
+                  // Toasted rather than reported inline: this list is at the
+                  // bottom of a long page and `error` renders in the card at
+                  // the top of it, so an inline failure here scrolled out of
+                  // sight before it could be read.
                   onClick={async () => {
+                    const filename = `template-${t.name}-v${t.version}.json`;
                     try {
                       const bundle = await client.exportTemplateBundle(t.id);
-                      download(`template-${t.name}-v${t.version}.json`, bundle);
+                      download(filename, bundle);
+                      toast.success("Template bundle downloaded.", filename);
                     } catch (e) {
-                      setError(e instanceof Error ? e.message : String(e));
+                      // Toast only, and no `setError`: `error` renders in the
+                      // card at the top of this page under the heading "The
+                      // import failed", which is both far away and the wrong
+                      // sentence for a failed export.
+                      toast.error(
+                        "The bundle could not be built.",
+                        e instanceof Error ? e.message : String(e),
+                      );
                     }
                   }}
                 >
@@ -323,11 +338,16 @@ export function MarketplacePanel({ client }: { client: MiniLpClient }) {
                   style={{ marginLeft: 10 }}
                   data-testid={`export-judge-download-${j.id}`}
                   onClick={async () => {
+                    const filename = `judge-${j.name}-v${j.prompt_version}.json`;
                     try {
                       const bundle = await client.exportJudgeBundle(j.id);
-                      download(`judge-${j.name}-v${j.prompt_version}.json`, bundle);
+                      download(filename, bundle);
+                      toast.success("Judge bundle downloaded.", filename);
                     } catch (e) {
-                      setError(e instanceof Error ? e.message : String(e));
+                      toast.error(
+                        "The bundle could not be built.",
+                        e instanceof Error ? e.message : String(e),
+                      );
                     }
                   }}
                 >

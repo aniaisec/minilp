@@ -44,6 +44,20 @@ export function useFocusTrap(
   // render happening first.
   const restoreTo = useRef<HTMLElement | null>(null);
 
+  // `onClose` is held in a ref and kept out of the effect's deps, because
+  // callers pass an inline arrow — so its identity changes on every parent
+  // render, and with it in the deps the whole trap tears down and rebuilds.
+  //
+  // That is not a performance note. Teardown runs the restore step, and the
+  // restore step is the destructive one: with a modal `<dialog>` open the
+  // trigger is inert, `focus()` on it silently does nothing, `activeElement`
+  // falls to `<body>`, and the immediate re-run captures *that* as the thing to
+  // restore to. The user then finishes with the dialog and is returned to the
+  // top of the document. The bug is invisible in jsdom, which does not
+  // implement inertness.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
   useEffect(() => {
     if (!active) return;
     const container = ref.current;
@@ -61,7 +75,7 @@ export function useFocusTrap(
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose?.();
+        closeRef.current?.();
         return;
       }
       if (e.key !== "Tab") return;
@@ -94,5 +108,6 @@ export function useFocusTrap(
       const target = restoreTo.current;
       if (target && document.contains(target)) target.focus();
     };
-  }, [ref, active, onClose]);
+    // `onClose` deliberately absent — see `closeRef` above.
+  }, [ref, active]);
 }
