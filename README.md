@@ -13,6 +13,68 @@ A self-hostable, open-source platform for collecting **any type of human label**
 > bundle that re-imports into a fresh instance and validates and previews
 > identically (M10). See [PLAN.md](PLAN.md) for the full roadmap.
 
+## How this was built
+
+MiniLP was built with AI coding agents; Claude Code, one milestone per session.
+
+**What I specified.** [PLAN.md](PLAN.md) was written before any code existed and
+was extended as scope grew (M6 authoring, M8's annotator home). It fixes the template schema (§2), the
+PostgreSQL data model (§4), the API surface (§5), the quality subsystem (§6), the
+judge and merge pipeline (§7) and the export formats (§10). Specifically mine:
+
+- **The invariants** (§12.0) — slot counts exactly K/n per variant value at
+  creation *and* at completion; an annotator never labels the same unit twice;
+  presentation-only template edits never bump a version while schema edits always
+  do; hotkey conflicts fail validation at save time. These are the product, so
+  they were specified and asserted everywhere rather than discovered later.
+- **The architecture calls**, including the two edges singled out under
+  [Architecture](#architecture) above: the judge orchestrator gets **no privileged
+  path to the database** and reaches work through the assignment engine exactly as
+  the annotation view does (§7.1); merge & routing is the **tail of the quality
+  pipeline**, not a service beside it, so it runs when a unit stops collecting and
+  weights each vote by the reputation §6.2 already maintains (§7.2). Likewise
+  templates as data rather than code (§2.6), leasing via `SELECT … FOR UPDATE SKIP
+  LOCKED` against real Postgres instead of an application-level lock, and
+  counterbalancing generalized from side-by-side to any variant-bearing template
+  (§2.7).
+- **Per-milestone acceptance criteria.** Every milestone in §12 carries an
+  explicit *Acceptance* line — "slot counts exactly K/n for every unit", "a
+  concurrency test with N simulated annotators proving no double-assignment and
+  preserved variant balance under abandonment", "kappa matches hand-computed
+  fixtures", "progress numbers reconcile exactly with DB state". Those were
+  written with the plan, ahead of the code they gate.
+
+**What was generated.** Essentially all of the implementation: backend services
+and Alembic migrations, the React views and widget registry, the ~800 tests (557
+backend, 246 frontend), and `docs/`.
+The large single commits are one milestone each — the direct result of the "one
+milestone per session; land it green" rule in §12.0.
+
+**How I validated it.** By behavior:
+
+- **CI gated the sequence.** No milestone began until the previous one's suite was
+  green (§12.0). Because the acceptance criteria were written first, "green" meant
+  the property I asked for held — not merely that the code that got written passed
+  the tests that got written with it.
+- **Manual verification at each milestone.** `docs/Testing.txt` is the
+  per-milestone script I ran by hand: real API calls, expected values, and the
+  gotchas that cost me time (stale Docker containers shadowing local dev servers
+  is the first entry). [Verifying it by hand](#verifying-it-by-hand) below is its
+  cleaned-up form, and
+  [What "green" should look like](#6-what-green-should-look-like) lists the
+  numbers a good run produces.
+- **I used the product.** Labeled through the seeded demo end-to-end as an
+  annotator — keyboard-only, golds and all — worked escalations in the review
+  queue, and ran the active-learning loop across iterations. This is where a suite
+  stays green on a flow that is still wrong to use: the annotator home,
+  exit-to-home and the seven UX phases all landed *after* the milestones they
+  belong to, because using the thing is what surfaced them.
+
+I did the specification, the architecture and the
+verification; the agents did the typing. `docs/DESIGN.md` is the decision log —
+why things are the way they are, including where an implementation deviated from
+the plan and what was decided instead.
+
 ## Why
 
 Label collection tools tend to be either rigid single-purpose UIs or heavyweight enterprise suites — and quality control is usually an afterthought. MiniLP treats both as first-class:
@@ -1187,8 +1249,8 @@ MiniLP/
 ├── docs/             # RUNBOOK.md — build · test · reset · run, and what to do when it breaks
 │                     # DESIGN.md — decision log + postmortems ("why", not "what")
 │                     # extending.md — how to add a display/input type, or a routing stage
+│                     # Testing.txt  — manual test scripts, per milestone
 ├── docker-compose.yml
-├── Testing.txt       # manual test scripts, per milestone
 ├── PLAN.md           # full project plan (§1–§14)
 └── README.md
 ```
