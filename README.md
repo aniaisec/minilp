@@ -85,6 +85,27 @@ Label collection tools tend to be either rigid single-purpose UIs or heavyweight
 - **Measurable bias** — every label records both the raw input (side clicked) and the canonical value (item chosen), unlocking left-preference rates, per-annotator bias scores, and per-unit order sensitivity.
 - **Rater reputation** — gold questions, peer agreement, bias, and speed flags feed a live score that gates task assignment — uniformly across all template types.
 
+## What it looks like
+
+Two surfaces, one for each side of the system.
+
+**Admin — every project on the instance.** A card per project, each carrying the
+question it asks and the configuration that drives assignment underneath it:
+overlap (`K`), gold ratio, and the template version bound to it. The rail is the
+whole admin surface — templates, the marketplace, and the review queue where
+escalated units wait.
+
+![MiniLP admin — the project dashboard](docs/images/Admin-projects.jpg)
+
+**Annotator — one task, rendered from a template.** Nothing in this view was
+written for image classification. The guidelines panel, the image block, the
+radio with its "Other…" escape hatch, the star rating and the ranking widget are
+the template renderer working from a template's JSON — a different labeling type
+is a different template, not a different screen. Every control carries the hotkey
+that operates it, and the task is completable without touching the mouse.
+
+![MiniLP annotator — the labeling surface](docs/images/annotate-light.jpg)
+
 ## Architecture
 
 ```mermaid
