@@ -60,11 +60,11 @@ milestone per session; land it green" rule in §12.0.
   green (§12.0). Because the acceptance criteria were written first, "green" meant
   the property I asked for held — not merely that the code that got written passed
   the tests that got written with it.
-- **Manual verification at each milestone.** `docs/Testing.txt` is the
-  per-milestone script I ran by hand: real API calls, expected values, and the
-  gotchas that cost me time (stale Docker containers shadowing local dev servers
-  is the first entry). [docs/VERIFY.md](docs/VERIFY.md) is its cleaned-up form,
-  and [what "green" should look like](docs/VERIFY.md#6-what-green-should-look-like)
+- **Manual verification at each milestone.** [docs/TESTING.md](docs/TESTING.md)
+  is the per-milestone script I ran by hand: real API calls, expected values, and
+  the gotchas that cost me time (stale Docker containers shadowing local dev
+  servers is the first entry). [docs/VERIFY.md](docs/VERIFY.md) is its cleaned-up
+  form, and [what "green" should look like](docs/VERIFY.md#6-what-green-should-look-like)
   lists the numbers a good run produces.
 - **I used the product.** Labeled through the seeded demo end-to-end as an
   annotator — keyboard-only, golds and all — worked escalations in the review
@@ -827,8 +827,8 @@ MiniLP/
 ├── docs/             # RUNBOOK.md — build · test · reset · run, and what to do when it breaks
 │                     # DESIGN.md — decision log + postmortems ("why", not "what")
 │                     # extending.md — how to add a display/input type, or a routing stage
-│                     # VERIFY.md    — hands-on walkthrough, with expected output
-│                     # Testing.txt  — manual test scripts, per milestone
+│                     # VERIFY.md   — hands-on walkthrough, with expected output
+│                     # TESTING.md  — per-milestone manual test scripts
 ├── docker-compose.yml
 ├── PLAN.md           # full project plan (§1–§14)
 └── README.md

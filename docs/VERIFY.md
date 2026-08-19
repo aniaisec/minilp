@@ -7,7 +7,7 @@ you can watch happen.
 > Operational instructions — build, test, reset the database, start each piece,
 > and what to do when one of them misbehaves — are in
 > **[RUNBOOK.md](RUNBOOK.md)**. The per-milestone scripts these steps were
-> distilled from are in **[Testing.txt](Testing.txt)**. Back to the
+> distilled from are in **[TESTING.md](TESTING.md)**. Back to the
 > **[README](../README.md)**.
 
 ## 0. Bring it up
