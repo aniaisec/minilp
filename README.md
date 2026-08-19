@@ -1,5 +1,9 @@
 # MiniLP — Mini Labeling Platform
 
+[![CI](https://github.com/aniaisec/minilp/actions/workflows/ci.yml/badge.svg)](https://github.com/aniaisec/minilp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/aniaisec/minilp)](https://github.com/aniaisec/minilp/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/aniaisec/minilp)](LICENSE)
+
 A self-hostable, open-source platform for collecting **any type of human label** through configurable **task templates** — image classification, ratings, policy review, transcription checks, and side-by-side preference judging for RLHF/LLM evaluation — with quality controls built in from the start: gold questions, inter-annotator agreement, rater reputation, and position-bias counterbalancing for comparison tasks.
 
 > **Status:** Milestone 10 — **the marketplace**, and with it every milestone in
