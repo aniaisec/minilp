@@ -928,26 +928,30 @@ equivalent. Left unchanged on purpose — the study measures it
 (`reserved_after_skip`), and whether a skip should mean "not now" or "not me"
 is worth deciding with that number in hand.
 
-### Open: concurrent fills of one unit can deadlock
+### Fixed: concurrent fills of one unit deadlocked
 
-Found by the measurement smoke run, and pre-existing: it reproduces on
-unmodified HEAD, where 8 of 206 submits returned 500 with 8 simulated raters at
-K = 2. `submit_label` inserts the label, and the label's foreign key to `units`
-takes a KEY SHARE lock on the unit row. `recompute_unit_status` then asks for
-FOR UPDATE on the same row. Two raters filling slots of one unit at the same
-moment each hold the first lock and wait for the other's second, and Postgres
-kills one with `DeadlockDetected`. The intent in `recompute_unit_status` ("so
-concurrent last-slot fills serialize") is right; the foreign-key lock taken just
-before it defeats it.
+Found by the measurement smoke run, and present since M2: with 8 simulated
+raters at K = 2, 8 of 206 submits returned 500. `submit_label` inserted the
+label, and the label's foreign key to `units` takes a KEY SHARE lock on the
+unit row. `recompute_unit_status` then asked for FOR UPDATE on the same row.
+Two raters filling slots of one unit at the same moment each held the first
+lock and waited for the other's second, and Postgres killed one with
+`DeadlockDetected`. The intent in `recompute_unit_status` ("so concurrent
+last-slot fills serialize") was right; the foreign-key lock taken just before
+it defeated it.
 
-Probable fix, not applied here because it changes the core submit path and
-deserves its own change and test: take the unit's FOR UPDATE lock in
-`submit_label` right after the slot's, *before* inserting the label, so every
-writer acquires slot → unit → inserts in the same order. `test_concurrency.py`
-exercises leasing, not simultaneous fills of one unit. A regression test needs
-two sessions filling the two slots of one K = 2 unit at the same time. Task
-events are written after the unit lock precisely so the instrumentation adds no
-new path into this.
+`submit_label` now takes the unit's FOR UPDATE lock right after the slot's,
+*before* inserting anything that references the unit, so every fill acquires
+slot → unit → inserts in the same order and the second fill of a unit waits
+for the first to commit. Skip, sweep and void insert nothing that references
+the unit before `recompute_unit_status` locks it, so they were never on this
+path; task events there are written after that lock for the same reason.
+
+Why the suite missed it: `test_concurrency.py`'s workers roll back and retry
+any failed submit, so a deadlock looked like a slow worker. The regression test
+(`test_simultaneous_fills_of_one_unit_do_not_deadlock`) holds two fills at a
+barrier just before the unit lock, which reproduced the deadlock on every run
+before the fix.
 
 ## Planned (later milestones)
 - README GIF (M6) — needs a screen recording of the seeded demo; the only M6

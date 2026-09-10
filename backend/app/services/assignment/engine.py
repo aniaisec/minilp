@@ -385,6 +385,14 @@ def submit_label(
         raise AssignmentError(f"slot {slot_id} not found", status=404)
     if slot.status != "leased" or slot.leased_by != annotator_id:
         raise AssignmentError("slot is not leased by this annotator", status=409)
+    # Lock the unit *before* inserting anything that references it. The label's
+    # foreign key takes a KEY SHARE lock on the unit row, and
+    # ``recompute_unit_status`` below wants FOR UPDATE on the same row: two fills
+    # of one unit that each insert first hold one lock apiece, wait on each
+    # other's, and Postgres kills one with DeadlockDetected (a 500 on submit).
+    # Taking FOR UPDATE here makes every fill acquire slot → unit → inserts in
+    # the same order, so the second simply waits for the first to commit.
+    db.get(Unit, slot.unit_id, with_for_update=True)
     slot.status = "filled"
     slot.lease_expires_at = None
     unit_id = slot.unit_id
@@ -408,10 +416,7 @@ def submit_label(
     db.add(label)
     db.flush()
     recompute_unit_status(db, unit_id)
-    # Logged only once ``recompute_unit_status`` holds the unit's FOR UPDATE
-    # lock: the event row references the unit, and an insert with a foreign key
-    # takes KEY SHARE on the referenced row — taken *before* that FOR UPDATE, it
-    # is one half of a deadlock with a concurrent fill of the same unit.
+    # Under the unit lock taken above, like the label insert.
     record_task_event(db, slot, "submitted", annotator_id=annotator_id, label_id=label.id)
     db.flush()
 

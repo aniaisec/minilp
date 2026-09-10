@@ -6,6 +6,7 @@ This exercises the real ``SELECT … FOR UPDATE SKIP LOCKED`` path, so it needs
 PostgreSQL (the suite's default). Each thread uses its own Session.
 """
 
+import contextlib
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -14,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Annotator, Label, Slot, Template, Unit, User
+from app.services.assignment import engine as assignment_engine
 from app.services.assignment import next_task, submit_label, sweep_expired_leases
 from app.services.ingest.bulk import ingest_units, parse_jsonl
 from app.services.projects import create_project
@@ -170,3 +172,75 @@ def test_concurrent_assignment_no_double_and_balanced(clean_db, engine) -> None:
                 counts[val] = counts.get(val, 0) + 1
             assert counts == {"AB": K // 2, "BA": K // 2}
             assert unit.status == "labeled"
+
+
+def test_simultaneous_fills_of_one_unit_do_not_deadlock(clean_db, engine, monkeypatch) -> None:
+    """Regression: two raters filling the two slots of one K=2 unit at once.
+
+    Inserting a label takes a KEY SHARE lock on its unit (the foreign key), and
+    ``recompute_unit_status`` then wants FOR UPDATE on the same row. If both
+    transactions insert before either takes that lock, each waits on the other
+    and Postgres kills one with ``DeadlockDetected`` — a 500 on submit, found by
+    the measurement smoke run at ~4% of submits with 8 raters.
+
+    The test above cannot see it: its workers retry any failed submit. Here a
+    barrier forces the losing interleaving — each thread is held just before the
+    unit lock until both have arrived. With the unit locked *before* the insert,
+    the second thread waits on the database instead of reaching the barrier, the
+    barrier gives up on it, and both fills go through one after the other.
+    """
+    seed_templates(clean_db)
+    tmpl = clean_db.scalar(select(Template).where(Template.name == "image-classification"))
+    project = create_project(
+        clean_db, name="fill-race", template_id=tmpl.id, labels_per_unit=2, gold_ratio=0.0
+    )
+    ingest_units(clean_db, project, parse_jsonl('{"payload": {"image_url": "http://x/1.png"}}'))
+    leases = []
+    for i in range(2):
+        user = User(email=f"race{i}@x.com", role="annotator")
+        clean_db.add(user)
+        clean_db.flush()
+        ann = Annotator(kind="human", user_id=user.id, display_name=f"race{i}")
+        clean_db.add(ann)
+        clean_db.flush()
+        leases.append((next_task(clean_db, ann.id, project.id).id, ann.id))
+    clean_db.commit()
+    assert len({slot_id for slot_id, _ in leases}) == 2
+
+    barrier = threading.Barrier(2, timeout=3)
+    real_recompute = assignment_engine.recompute_unit_status
+
+    def held_before_the_unit_lock(db, unit_id, **kwargs):
+        with contextlib.suppress(threading.BrokenBarrierError):
+            barrier.wait()
+        return real_recompute(db, unit_id, **kwargs)
+
+    monkeypatch.setattr(assignment_engine, "recompute_unit_status", held_before_the_unit_lock)
+
+    errors: list[BaseException] = []
+
+    def fill(slot_id: int, annotator_id: int) -> None:
+        session = Session(bind=engine, expire_on_commit=False)
+        try:
+            submit_label(session, slot_id, annotator_id, raw={"category": "cat"})
+            session.commit()
+        except Exception as e:  # noqa: BLE001 — the assertion below reports it
+            session.rollback()
+            errors.append(e)
+        finally:
+            session.close()
+
+    threads = [threading.Thread(target=fill, args=lease, daemon=True) for lease in leases]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert not errors, f"a simultaneous fill failed: {errors!r}"
+    with Session(bind=engine) as s:
+        slots = s.scalars(select(Slot).where(Slot.id.in_([sid for sid, _ in leases]))).all()
+        assert [sl.status for sl in slots] == ["filled", "filled"]
+        valid = s.scalar(select(func.count()).select_from(Label).where(Label.is_valid.is_(True)))
+        assert valid == 2
+        unit = s.scalar(select(Unit).where(Unit.project_id == project.id))
+        assert unit.status in ("labeled", "finalized")

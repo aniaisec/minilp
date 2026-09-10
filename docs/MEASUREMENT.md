@@ -303,14 +303,13 @@ study data existed: 60 synthetic units, 8 simulated raters, `--time-scale 0`,
 and a scratch database. It already surfaced three things the plan has to account
 for:
 
-- **Concurrent fills of one unit can deadlock.** On unmodified HEAD, 8 of 206
-  submits (3.9%) returned HTTP 500, every one a `DeadlockDetected` in
-  `submit_label → recompute_unit_status`. The rate was the same with this change
-  applied (the task-event writes come after the unit lock, so they add no new
-  path). The mechanism and a proposed fix are in
-  [DESIGN.md](DESIGN.md#open-concurrent-fills-of-one-unit-can-deadlock).
-  **Fix it before phase 3.** Otherwise pilot participants will hit occasional
-  submit errors at K ≥ 2, and the H4 "zero 5xx under load" target cannot pass.
+- **Concurrent fills of one unit deadlocked (now fixed).** Before the fix, 8
+  of 206 submits (3.9%) returned HTTP 500, every one a `DeadlockDetected` in
+  `submit_label → recompute_unit_status`. `submit_label` now locks the unit
+  before inserting the label; the mechanism and the regression test are in
+  [DESIGN.md](DESIGN.md#fixed-concurrent-fills-of-one-unit-deadlocked). The
+  §4.2 load test is still the place to confirm the H4 "zero 5xx under load"
+  target at 50 raters.
 - **Skips come straight back.** 5 of 7 skips were re-served to the same rater
   as their very next task (§6).
 - **A paused rater's reputation recovers** after the void (§6).
