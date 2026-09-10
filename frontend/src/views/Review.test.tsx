@@ -224,6 +224,24 @@ describe("decisions are one key press and advance the queue", () => {
     await waitFor(() => expect(screen.queryByTestId("review-override")).toBeNull());
   });
 
+  it("does not lose a key pressed the moment the unit appears", async () => {
+    // Regression for a CI-only flake: the key listener and the per-unit reset
+    // used to be passive effects, which React may run a scheduler task *after*
+    // the unit is already in the DOM. A key pressed in that gap hit a stale
+    // listener that still saw no unit (and a late reset could close the editor
+    // it had just opened). Pressing `o` from a MutationObserver lands exactly
+    // there: after the commit, before any deferred effect.
+    const observer = new MutationObserver(() => {
+      if (screen.queryByTestId("review-proposal")) {
+        observer.disconnect();
+        fireEvent.keyDown(window, { key: "o" });
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    renderReview([item()]);
+    await screen.findByTestId("review-override");
+  });
+
   it("sends the reviewer's own answer, canonicalized, on override", async () => {
     const client = renderReview([item()]);
     await screen.findByTestId("review-proposal");

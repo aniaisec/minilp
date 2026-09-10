@@ -16,7 +16,7 @@
 // Answers render through the same widget registry the annotation view uses, so a
 // reviewer overriding a ranking gets the ranking widget rather than a JSON box.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { Button, Card, EmptyState, ErrorState, Table } from "../components/ui";
 import type { MiniLpClient } from "../api/client";
@@ -103,14 +103,21 @@ export function Review({ client, projectId, exit }: ReviewProps) {
 
   const current = queue && queue.length > index ? queue[index] : null;
 
-  // The list item carries the proposal; the detail fetch adds the template, which
-  // is what lets the override editor render real widgets instead of raw JSON.
-  useEffect(() => {
-    let live = true;
+  // A new unit starts with a closed, empty editor. A layout effect, so the reset
+  // lands in the same commit that puts the unit on screen: as a passive effect
+  // it could run *after* a reviewer's first key press and close the editor that
+  // press had just opened.
+  useLayoutEffect(() => {
     setDetail(null);
     setOverriding(false);
     setAnswers({});
     setComment("");
+  }, [current?.unit_id]);
+
+  // The list item carries the proposal; the detail fetch adds the template, which
+  // is what lets the override editor render real widgets instead of raw JSON.
+  useEffect(() => {
+    let live = true;
     if (!current) return;
     client
       .reviewItem(current.unit_id)
@@ -165,7 +172,10 @@ export function Review({ client, projectId, exit }: ReviewProps) {
   );
 
   // Keyboard dispatcher — the same shape as the annotation view's (§2.4).
-  useEffect(() => {
+  // Subscribed in a layout effect so the listener is current by the time the
+  // unit is visible. A passive effect can run a scheduler task later, and a key
+  // pressed in between reached a listener that still saw no unit and dropped it.
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
