@@ -227,8 +227,9 @@ describe("the annotation view exits by releasing its held slot", () => {
 
     fireEvent.click(screen.getByTestId("btn-home"));
     // The same `skip` the `s` key uses — so the slot reopens now, variant
-    // retained (§2.7), rather than sitting leased until the lease expires.
-    await waitFor(() => expect(client.skip).toHaveBeenCalledWith(42, 9));
+    // retained (§2.7), rather than sitting leased until the lease expires —
+    // tagged "exit" so the task-event log can tell leaving from skipping.
+    await waitFor(() => expect(client.skip).toHaveBeenCalledWith(42, 9, "exit"));
     await waitFor(() => expect(nav.value).toBe("?annotator=9&key=k"));
   });
 

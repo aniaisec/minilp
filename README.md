@@ -770,6 +770,18 @@ review queue, the active-learning loop and marketplace bundles from the command
 line — every step paired with the output it should produce, ending in a table of
 what "green" looks like.
 
+## Measuring it
+
+Green suites prove the invariants; they do not prove the shipped label beats its
+raters, that reputation tracks real rater quality, or that the loop is fast.
+**[docs/MEASUREMENT.md](docs/MEASUREMENT.md)** is the plan for measuring those by
+using MiniLP for what it is for — collecting labels, on items whose answers are
+known outside the platform — with simulated raters of planted quality, a human
+pilot, a usability survey collected through MiniLP itself, and targets fixed
+before the data is in. The tooling is `backend/app/measure/` (`provision`,
+`simulate`, `report`), and every slot transition — including skips, exits and
+expired leases — is now logged and exported as `?format=events`.
+
 ## Roadmap
 
 The full plan is in [PLAN.md](PLAN.md) (§12). Milestones land one at a time, each
@@ -829,6 +841,7 @@ MiniLP/
 │                     # extending.md — how to add a display/input type, or a routing stage
 │                     # VERIFY.md   — hands-on walkthrough, with expected output
 │                     # TESTING.md  — per-milestone manual test scripts
+│                     # MEASUREMENT.md — measuring MiniLP by labeling through it
 ├── docker-compose.yml
 ├── PLAN.md           # full project plan (§1–§14)
 └── README.md

@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Annotator, Label, Project, Slot, Unit
+from app.services.assignment.events import RELEASE_REASONS, record_task_event
 from app.services.quality.pipeline import QualityOutcome, on_label_submitted
 from app.services.quality.reputation import compute_reputation
 from app.services.slots.lifecycle import recompute_unit_status, reopen_slot, void_labels
@@ -319,6 +320,7 @@ def next_task(
     )
     if held is not None:
         held.lease_expires_at = lease_expiry(project.lease_minutes, now)
+        record_task_event(db, held, "resumed", annotator_id=annotator_id, at=now)
         db.flush()
         return held
 
@@ -341,6 +343,7 @@ def next_task(
     unit = db.get(Unit, slot.unit_id)
     if unit is not None and unit.status == "pending":
         unit.status = "in_progress"
+    record_task_event(db, slot, "leased", annotator_id=annotator_id, at=now)
     db.flush()
     return slot
 
@@ -405,6 +408,11 @@ def submit_label(
     db.add(label)
     db.flush()
     recompute_unit_status(db, unit_id)
+    # Logged only once ``recompute_unit_status`` holds the unit's FOR UPDATE
+    # lock: the event row references the unit, and an insert with a foreign key
+    # takes KEY SHARE on the referenced row — taken *before* that FOR UPDATE, it
+    # is one half of a deadlock with a concurrent fill of the same unit.
+    record_task_event(db, slot, "submitted", annotator_id=annotator_id, label_id=label.id)
     db.flush()
 
     outcome = on_label_submitted(db, label) if run_quality else QualityOutcome()
@@ -412,12 +420,18 @@ def submit_label(
     return label
 
 
-def skip_task(db: Session, slot_id: int, annotator_id: int) -> Slot:
+def skip_task(db: Session, slot_id: int, annotator_id: int, *, reason: str = "skip") -> Slot:
     """Release a held lease (``s`` skip): slot reopens, variant retained (§2.7).
 
     Row-locked so it is race-safe and the session's view of the slot stays
-    coherent (same rationale as ``submit_label``).
+    coherent (same rationale as ``submit_label``). ``reason`` changes nothing
+    about the slot — a skip, an exit and a judge release all reopen it the same
+    way — only which event is logged, so a study can tell them apart.
     """
+    if reason not in RELEASE_REASONS:
+        raise AssignmentError(
+            f"reason must be one of {sorted(RELEASE_REASONS)}, got '{reason}'", status=422
+        )
     slot = db.get(Slot, slot_id, with_for_update=True, populate_existing=True)
     if slot is None:
         raise AssignmentError(f"slot {slot_id} not found", status=404)
@@ -426,6 +440,8 @@ def skip_task(db: Session, slot_id: int, annotator_id: int) -> Slot:
     reopen_slot(slot)
     db.flush()
     recompute_unit_status(db, slot.unit_id)
+    # After the unit lock, for the reason given in ``submit_label``.
+    record_task_event(db, slot, RELEASE_REASONS[reason], annotator_id=annotator_id)
     db.flush()
     return slot
 
@@ -446,12 +462,18 @@ def sweep_expired_leases(db: Session, now: datetime | None = None) -> int:
         .with_for_update(skip_locked=True)
         .execution_options(populate_existing=True)
     ).all()
+    # ``reopen_slot`` clears the holder, and who abandoned the task is the half
+    # of the event worth having — so it is remembered before reopening.
+    holders = {slot.id: slot.leased_by for slot in expired}
     for slot in expired:
         reopen_slot(slot)
     if expired:
         db.flush()
         for unit_id in {slot.unit_id for slot in expired}:
             recompute_unit_status(db, unit_id)
+        # After the unit locks, for the reason given in ``submit_label``.
+        for slot in expired:
+            record_task_event(db, slot, "expired", annotator_id=holders[slot.id], at=now)
         db.flush()
     return len(expired)
 

@@ -457,9 +457,10 @@ export function Annotate({
               href={homeHref}
               // Leaving releases the held lease through the same `skip` path
               // the `s` key uses, so the slot reopens now — variant retained
-              // (§2.7) — instead of sitting leased until it expires.
+              // (§2.7) — instead of sitting leased until it expires. Tagged
+              // "exit" so the task-event log can tell leaving from skipping.
               onLeave={async () => {
-                if (task) await client.skip(task.slot_id, annotatorId);
+                if (task) await client.skip(task.slot_id, annotatorId, "exit");
               }}
               dirty={Object.keys(answers).length > 0 && !!task}
               // `x` must not fire behind the shortcuts dialog: quitting the task

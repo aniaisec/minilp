@@ -1,0 +1,19 @@
+{
+  "name": "sus-survey",
+  "version": 1,
+  "description": "System Usability Scale: one statement per unit, agree 1-5.",
+  "layout": { "arrangement": "stack", "width": "lg" },
+  "display": [
+    { "type": "text", "source": "$unit.statement", "render": { "max_lines": 6 } }
+  ],
+  "inputs": [
+    {
+      "id": "agreement",
+      "type": "likert",
+      "label": "1 = strongly disagree, 5 = strongly agree",
+      "scale": { "min": 1, "max": 5 },
+      "required": true
+    }
+  ],
+  "variants": null
+}

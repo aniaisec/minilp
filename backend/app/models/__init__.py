@@ -14,6 +14,7 @@ from app.models.label import Label
 from app.models.project import Project
 from app.models.reputation_event import ReputationEvent
 from app.models.slot import Slot
+from app.models.task_event import TaskEvent
 from app.models.template import Template
 from app.models.unit import Unit
 from app.models.user import User
@@ -31,6 +32,7 @@ __all__ = [
     "Project",
     "ReputationEvent",
     "Slot",
+    "TaskEvent",
     "Template",
     "Unit",
     "User",

@@ -18,6 +18,9 @@ consensus picked, so an export and the progress view can never disagree.
                 {prompt, chosen, rejected, meta:{…}}.
     sft         {input, output} pairs from generation-style templates (a free-text
                 input is the output; the first text/markdown block is the input).
+    events      one row per task event (lease, resume, skip, exit, release,
+                expiry, submit) — the measurement format: skip rate,
+                abandonment and lease-to-answer time live here, not in labels.
 
 Rows are produced lazily so a large project streams rather than materializing.
 """
@@ -31,13 +34,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Annotator, Label, Project, Slot, Template, Unit
+from app.models import Annotator, Label, Project, Slot, TaskEvent, Template, Unit
 from app.services.merge.finalize import final_label_for
 from app.services.quality.canonical import positional_variant
 from app.services.quality.consensus import evaluate_unit
 from app.services.templates.spec import UNIT_REF_PREFIX
 
-EXPORT_FORMATS = ("labels", "raw", "preference", "sft")
+EXPORT_FORMATS = ("labels", "raw", "preference", "sft", "events")
 
 
 class ExportError(ValueError):
@@ -326,6 +329,38 @@ def _sft_rows(db: Session, project: Project, template: Template) -> Iterator[dic
             }
 
 
+# --- events -----------------------------------------------------------------
+
+
+def _events_rows(db: Session, project: Project, template: Template) -> Iterator[dict[str, Any]]:
+    ann_cache: dict[int, Annotator | None] = {}
+    slot_cache: dict[int, Slot | None] = {}
+    events = db.scalars(
+        select(TaskEvent)
+        .where(TaskEvent.project_id == project.id)
+        .order_by(TaskEvent.at, TaskEvent.id)
+    )
+    for event in events:
+        if event.annotator_id is not None and event.annotator_id not in ann_cache:
+            ann_cache[event.annotator_id] = db.get(Annotator, event.annotator_id)
+        annotator = ann_cache.get(event.annotator_id) if event.annotator_id else None
+        if event.slot_id not in slot_cache:
+            slot_cache[event.slot_id] = db.get(Slot, event.slot_id)
+        slot = slot_cache[event.slot_id]
+        yield {
+            "event_id": event.id,
+            "project_id": project.id,
+            "unit_id": event.unit_id,
+            "slot_id": event.slot_id,
+            "annotator_id": event.annotator_id,
+            "annotator_kind": annotator.kind if annotator else None,
+            "kind": event.kind,
+            "label_id": event.label_id,
+            "variant_value": positional_variant(template.schema, slot.variant if slot else None),
+            "at": event.at.isoformat(),
+        }
+
+
 # --- dispatch ---------------------------------------------------------------
 
 _BUILDERS = {
@@ -333,6 +368,7 @@ _BUILDERS = {
     "raw": _raw_rows,
     "preference": _preference_rows,
     "sft": _sft_rows,
+    "events": _events_rows,
 }
 
 

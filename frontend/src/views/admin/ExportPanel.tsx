@@ -38,6 +38,13 @@ const FORMATS: { id: ExportFormat; label: string; blurb: string }[] = [
     label: "SFT",
     blurb: "{input, output} pairs from a generation-style template's free-text answer.",
   },
+  {
+    id: "events",
+    label: "Task events",
+    blurb:
+      "One row per lease, resume, skip, exit, expiry and submit — the measurement " +
+      "format: skip rate, abandonment and time-to-answer live here, not in the labels.",
+  },
 ];
 
 const PREVIEW_ROWS = 3;

@@ -145,13 +145,21 @@ def post_submit(
 def post_skip(
     slot_id: int,
     annotator: int = Query(description="Annotator releasing the lease."),
+    reason: str = Query(
+        default="skip",
+        description="skip (the `s` key) | exit (leaving the project). Only the "
+        "logged task event differs; the slot reopens the same way.",
+    ),
     user: User = Depends(require_annotator),
     db: Session = Depends(get_db),
 ) -> dict:
     """Release a held lease; the slot reopens with its variant retained (§2.7)."""
     _authorize_annotator(db, user, annotator)
+    # ``release`` is the judge orchestrator's in-process reason, not a client's.
+    if reason not in ("skip", "exit"):
+        raise HTTPException(status_code=422, detail="reason must be 'skip' or 'exit'")
     try:
-        slot = skip_task(db, slot_id, annotator)
+        slot = skip_task(db, slot_id, annotator, reason=reason)
     except AssignmentError as e:
         raise HTTPException(status_code=e.status, detail=str(e)) from e
     return {"slot_id": slot.id, "status": slot.status}

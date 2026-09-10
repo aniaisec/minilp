@@ -201,7 +201,7 @@ def run_judge(
         attempted.add(slot.unit_id)
         unit = db.get(Unit, slot.unit_id)
         if unit is None:  # pragma: no cover - FK makes this unreachable
-            skip_task(db, slot.id, annotator.id)
+            skip_task(db, slot.id, annotator.id, reason="release")
             continue
 
         prompt = assemble_prompt(
@@ -233,7 +233,7 @@ def run_judge(
                 result.estimated_cost_usd = (result.estimated_cost_usd or 0.0) + price.cost(
                     tokens_in, tokens_out
                 )
-            skip_task(db, slot.id, annotator.id)
+            skip_task(db, slot.id, annotator.id, reason="release")
             continue
 
         # --- cache, then call ------------------------------------------------
@@ -366,7 +366,7 @@ def _fatal(error: ProviderError) -> bool:
 def _release(db: Session, slot_id: int, annotator_id: int) -> None:
     """Return an unanswered slot to the pool, variant intact (§2.7)."""
     with contextlib.suppress(AssignmentError):  # the lease may already be gone
-        skip_task(db, slot_id, annotator_id)
+        skip_task(db, slot_id, annotator_id, reason="release")
 
 
 def _fire_budget_webhook(

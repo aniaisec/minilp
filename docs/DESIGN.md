@@ -886,6 +886,69 @@ stays shareable (M10 bundles) without leaking anyone's credentials" since M7
 landed. `export_judge_config_bundle` had nothing to redact — there was never a
 secret in the row to leave out.
 
+## Measurement instrumentation
+
+What [MEASUREMENT.md](MEASUREMENT.md) needed that the platform did not record.
+
+### Slot transitions get their own log, not new `reputation_events` kinds
+
+A skip or an expired lease is not evidence about a rater's quality, and
+`reputation_events` is what reputation is computed from — putting them there
+would invite the next change to start scoring them. `task_events` is a separate
+append-only table the quality pipeline never reads. The engine writes it,
+because only the engine knows *why* a slot is reopening: `reopen_slot` is the
+same call for a skip, an exit-to-home, a judge release and an expiry.
+Timestamps come from the engine's clock, not `now()` — Postgres' `now()` is the
+transaction start, and a judge run leases and submits a hundred slots in one.
+
+### The skip reason changes the log, not the slot
+
+`POST /tasks/{slot}/skip?reason=exit` reopens the slot exactly as a skip does.
+Giving an exit different slot semantics would have been a product change hiding
+inside an instrumentation change. `release` is accepted in-process only (the
+judge orchestrator) and refused over HTTP, so a client cannot make its skips
+look like a judge's.
+
+### Ground truth for a study lives outside the platform
+
+Golds feed reputation, pausing and merge weights, so scoring the pipeline
+against them would be circular. A study's answer key is joined to the exports
+on a payload field after the fact, and the report tooling (`app/measure/`) is a
+client of the HTTP API rather than a module the platform imports — it has no
+path by which the answer key could leak into a live decision.
+
+### Open: a skipped slot comes straight back to the skipper
+
+Found while writing the event tests, and pinned there as current behaviour:
+skipping reopens the slot for everyone *including the annotator who skipped
+it*, and `_open_slot_query` orders by priority, age and slot id, so it is
+usually the very next thing they are served. The judge orchestrator already
+works around this with a per-run `exclude_units`; the annotation view has no
+equivalent. Left unchanged on purpose — the study measures it
+(`reserved_after_skip`), and whether a skip should mean "not now" or "not me"
+is worth deciding with that number in hand.
+
+### Open: concurrent fills of one unit can deadlock
+
+Found by the measurement smoke run, and pre-existing: it reproduces on
+unmodified HEAD, where 8 of 206 submits returned 500 with 8 simulated raters at
+K = 2. `submit_label` inserts the label, and the label's foreign key to `units`
+takes a KEY SHARE lock on the unit row. `recompute_unit_status` then asks for
+FOR UPDATE on the same row. Two raters filling slots of one unit at the same
+moment each hold the first lock and wait for the other's second, and Postgres
+kills one with `DeadlockDetected`. The intent in `recompute_unit_status` ("so
+concurrent last-slot fills serialize") is right; the foreign-key lock taken just
+before it defeats it.
+
+Probable fix, not applied here because it changes the core submit path and
+deserves its own change and test: take the unit's FOR UPDATE lock in
+`submit_label` right after the slot's, *before* inserting the label, so every
+writer acquires slot → unit → inserts in the same order. `test_concurrency.py`
+exercises leasing, not simultaneous fills of one unit. A regression test needs
+two sessions filling the two slots of one K = 2 unit at the same time. Task
+events are written after the unit lock precisely so the instrumentation adds no
+new path into this.
+
 ## Planned (later milestones)
 - README GIF (M6) — needs a screen recording of the seeded demo; the only M6
   deliverable not landed

@@ -393,7 +393,7 @@ export interface ProjectPatchResult {
   template_version?: number;
 }
 
-export type ExportFormat = "labels" | "raw" | "preference" | "sft";
+export type ExportFormat = "labels" | "raw" | "preference" | "sft" | "events";
 
 // GET /annotators/{id}/report (§5, §6.2)
 export interface AnnotatorReport {

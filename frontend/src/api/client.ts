@@ -52,11 +52,19 @@ import type {
 export interface TaskClient {
   nextTask(annotator: number, project: number): Promise<Task | null>;
   submit(slotId: number, annotator: number, body: SubmitRequest): Promise<LabelOut>;
-  skip(slotId: number, annotator: number): Promise<{ slot_id: number; status: string }>;
+  // `reason` only changes the task event the backend logs (a skip vs leaving the
+  // project) — the slot reopens the same way either way.
+  skip(
+    slotId: number,
+    annotator: number,
+    reason?: SkipReason,
+  ): Promise<{ slot_id: number; status: string }>;
   // Optional so a minimal mock client stays valid; the annotation view degrades
   // to "no reputation badge" rather than failing when it is absent.
   annotatorReport?(annotator: number, project?: number): Promise<AnnotatorReport>;
 }
+
+export type SkipReason = "skip" | "exit";
 
 export interface ClientConfig {
   baseUrl?: string; // default "/api" (proxied in dev)
@@ -145,8 +153,13 @@ export class MiniLpClient {
     return this.parse<AnnotatorReport>(res);
   }
 
-  async skip(slotId: number, annotator: number): Promise<{ slot_id: number; status: string }> {
-    const res = await fetch(`${this.baseUrl}/tasks/${slotId}/skip?annotator=${annotator}`, {
+  async skip(
+    slotId: number,
+    annotator: number,
+    reason?: SkipReason,
+  ): Promise<{ slot_id: number; status: string }> {
+    const q = `annotator=${annotator}${reason ? `&reason=${reason}` : ""}`;
+    const res = await fetch(`${this.baseUrl}/tasks/${slotId}/skip?${q}`, {
       method: "POST",
       headers: this.headers(),
     });
